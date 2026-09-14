@@ -38,9 +38,7 @@ ament_target_dependencies(mecanum_drive_node
 
 # GTest
 if(BUILD_TESTING)
-  find_package(ament_lint_auto REQUIRED)
   find_package(ament_cmake_gtest REQUIRED)
-  ament_lint_auto_find_test_dependencies()
 
   ament_add_gtest(test_kinematics
     test/test_kinematics.cpp
