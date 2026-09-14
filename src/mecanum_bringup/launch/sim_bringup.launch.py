@@ -13,16 +13,14 @@ def generate_launch_description():
     pkg_control = get_package_share_directory('mecanum_control')
     pkg_task    = get_package_share_directory('mecanum_task_manager')
 
-    # warehouse devriye waypoint'leri (varsayılan)
-    default_waypoints = os.path.join(pkg_task, 'config', 'warehouse_patrol_waypoints.yaml')
+    default_stations = os.path.join(pkg_task, 'config', 'stations.yaml')
 
     use_sim_time = LaunchConfiguration('use_sim_time', default='true')
     world = LaunchConfiguration('world', default='warehouse')
     launch_navigation = LaunchConfiguration('launch_navigation', default='false')
     launch_control = LaunchConfiguration('launch_control', default='true')
     launch_task_manager = LaunchConfiguration('launch_task_manager', default='false')
-    use_simple_patrol = LaunchConfiguration('use_simple_patrol', default='true')
-    waypoints_yaml = LaunchConfiguration('waypoints_yaml', default=default_waypoints)
+    stations_yaml = LaunchConfiguration('stations_yaml', default=default_stations)
 
     # 1) Gazebo + robot spawn. world:= minimal | empty | warehouse
     simulation = IncludeLaunchDescription(
@@ -50,15 +48,15 @@ def generate_launch_description():
         condition=IfCondition(launch_control)
     )
 
-    # 4) Task Manager: use_simple_patrol=true → sadece odom ile dolaşım (Nav2 yok)
+    # 4) QR transport mission manager (requires Nav2 and lift services)
     task_manager = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_task, 'launch', 'task_manager.launch.py')
         ),
         launch_arguments={
             'use_sim_time': use_sim_time,
-            'waypoints_yaml': waypoints_yaml,
-            'use_simple_patrol': use_simple_patrol,
+            'stations_yaml': stations_yaml,
+            'allow_mock_lift': 'true',
         }.items(),
         condition=IfCondition(launch_task_manager)
     )
@@ -72,7 +70,7 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'world',
             default_value='warehouse',
-            description='World: warehouse (varsayılan), minimal, empty'
+            description='World: warehouse (default), minimal, empty'
         ),
         DeclareLaunchArgument(
             'launch_navigation',
@@ -90,18 +88,12 @@ def generate_launch_description():
             description='Launch task manager and QR reader (requires Nav2)'
         ),
         DeclareLaunchArgument(
-            'waypoints_yaml',
-            default_value=default_waypoints,
-            description='Patrol waypoints YAML (varsayılan: warehouse_patrol_waypoints.yaml)'
-        ),
-        DeclareLaunchArgument(
-            'use_simple_patrol',
-            default_value='true',
-            description='true = odom ile waypoint dolaşımı (önerilen); false = Nav2 ile'
+            'stations_yaml',
+            default_value=default_stations,
+            description='Whitelisted station pose YAML for QR transport missions'
         ),
         simulation,
         navigation,
         control,
         task_manager,
     ])
-

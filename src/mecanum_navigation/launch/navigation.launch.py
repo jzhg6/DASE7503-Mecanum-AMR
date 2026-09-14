@@ -2,7 +2,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
-from launch.conditions import IfCondition
+from launch.conditions import IfCondition, UnlessCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -31,6 +31,18 @@ def generate_launch_description():
         condition=IfCondition(slam_mode)
     )
 
+    localization_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(pkg_nav2, 'launch', 'localization_launch.py')
+        ),
+        launch_arguments={
+            'use_sim_time': use_sim_time,
+            'map': map_yaml,
+            'params_file': nav2_params,
+        }.items(),
+        condition=UnlessCondition(slam_mode)
+    )
+
     nav2_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(pkg_nav2, 'launch', 'navigation_launch.py')
@@ -49,6 +61,6 @@ def generate_launch_description():
                               description='Path to map yaml (AMCL mode only)'),
 
         slam_launch,
+        localization_launch,
         nav2_launch,
     ])
-

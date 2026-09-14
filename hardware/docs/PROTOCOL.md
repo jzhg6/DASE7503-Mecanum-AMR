@@ -1,77 +1,68 @@
-# UART protocol — Jetson ↔ STM32
+# Raspberry Pi - ESP32 serial protocol
 
-Communication between Jetson Nano (ROS 2) and STM32 is over a single UART link. Default baud rate: **115200**, 8N1.
+Default link: USB UART, 115200 baud, 8N1. Each ASCII frame ends in LF (`\n`). The format is intentionally readable during bench testing. It is not intended for a noisy, long-distance cable; add a checksum or use CAN/RS-485 if the final wiring requires it.
 
-## Frame format (ASCII, line-based)
+## Raspberry Pi to ESP32
 
-Each message is one line ending with `\n` (LF). This keeps parsing simple on both sides and allows debugging with a serial terminal.
+### Motion command
 
-### 1. Motion command (periodic, from Jetson → STM32)
-
-Body velocity from ROS `/cmd_vel` is converted to wheel speeds on the Jetson; the STM32 receives **wheel angular speeds** so it does not need to run inverse kinematics.
-
-```
+```text
 M,w_fl,w_fr,w_rl,w_rr\n
 ```
 
-- `M` = motion.
-- `w_fl`, `w_fr`, `w_rl`, `w_rr` = floating-point wheel speeds in **rad/s** (front_left, front_right, rear_left, rear_right).
-- Example: `M,1.2,-0.5,0.8,-0.3\n`
+Wheel speeds are rad/s in the order front-left, front-right, rear-left, rear-right. The Raspberry Pi sends at 25 Hz. The ESP32 stops all wheels if no valid `M` frame arrives for 500 ms.
 
-Sent at a fixed rate (e.g. 20–50 Hz). If the STM32 does not receive a motion frame within a timeout (e.g. 300–500 ms), it should stop all wheels (watchdog).
+### Servo command
 
-### 2. Lift command (on request, Jetson → STM32)
-
-```
-L,0\n   → lift down (release)
-L,1\n   → lift up (grasp)
+```text
+S,channel,angle_deg\n
 ```
 
-- `L` = lift.
-- Second field: `0` = down, `1` = up.
+- `channel` is currently `0` for the lift/gripper servo.
+- `angle_deg` is clamped to 0-180 by both endpoints.
+- Calibrate unloaded `servo_down_deg` and `servo_up_deg` before attaching the linkage.
 
-The STM32 drives the lift actuator accordingly (e.g. relay or PWM) and may optionally reply with an acknowledgment (see Telemetry).
+### Safety latch
 
-### 3. Telemetry (optional, STM32 → Jetson)
-
-If the STM32 sends back data, each line can carry e.g. wheel speeds or status:
-
-```
-T,w_fl,w_fr,w_rl,w_rr,lift_pos\n
+```text
+E,0\n   disable motor outputs immediately
+E,1\n   permit motor commands after physical checks
 ```
 
-- `T` = telemetry.
-- `w_*` = measured or estimated wheel speeds (rad/s).
-- `lift_pos` = lift position (e.g. 0 = down, 1 = up) or raw ADC value.
+The ESP32 boots disabled. The Raspberry Pi bridge also sends `E,0` whenever it opens the port and when it shuts down. This software latch supplements, but does not replace, a physical emergency stop.
 
-The Jetson bridge can publish these to ROS (e.g. custom message or `Float64MultiArray`) for diagnostics or odometry.
+### Heartbeat
 
-### 4. Heartbeat / keep-alive (optional)
-
-To simplify watchdog logic, the Jetson can send a dedicated heartbeat:
-
-```
+```text
 H\n
 ```
 
-The STM32 resets its “last command” timer on any valid frame (including `M` and `L`); `H` can be used when no motion or lift change is needed.
+The heartbeat confirms link activity but does not keep motion alive. Only a valid `M` frame resets the motion watchdog.
 
----
+## ESP32 to Raspberry Pi
 
-## Summary table
+The starter firmware emits:
 
-| Direction   | Frame   | Meaning |
-|------------|---------|---------|
-| Jetson → STM32 | `M,w_fl,w_fr,w_rl,w_rr\n` | Set wheel speeds (rad/s). |
-| Jetson → STM32 | `L,0\n` / `L,1\n`         | Lift down / up. |
-| Jetson → STM32 | `H\n` (optional)          | Heartbeat. |
-| STM32 → Jetson | `T,...\n` (optional)      | Telemetry. |
+```text
+T,uptime_ms,enabled,watchdog_stopped,servo_angle\n
+```
 
-## Error handling
+This is diagnostic telemetry, not wheel odometry. A closed-loop version should extend telemetry with encoder counts, measured wheel speed, battery voltage and fault flags.
 
-- **Jetson:** If serial write fails or the port is disconnected, log and optionally publish a diagnostic. Do not block the ROS node.
-- **STM32:** On parse error (unknown prefix, bad number), ignore the line and optionally toggle an error LED. On receive timeout, stop motors and lift (watchdog).
+## Invalid input
 
-## Binary variant (optional)
+- Unknown frame types, missing fields, non-finite values and overlong lines are ignored.
+- An invalid line never changes the current motor command.
+- Any serial disconnect or parser failure must ultimately result in the independent ESP32 watchdog stopping the motors.
 
-For higher throughput or smaller frames, a binary protocol can be used instead (e.g. fixed-size struct with sync byte and checksum). The ASCII format above is the reference for this repo; the Jetson bridge and STM32 skeleton can be extended to support a binary mode if needed.
+## Example session
+
+```text
+ESP32> READY,DASE7503_MECANUM_V1
+Pi>    E,1
+Pi>    M,2.0,2.0,2.0,2.0
+ESP32> T,1000,1,0,35
+Pi>    S,0,120
+Pi>    M,0.0,0.0,0.0,0.0
+Pi>    E,0
+```

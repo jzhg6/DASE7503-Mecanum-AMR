@@ -1,0 +1,7 @@
+# Replace these example coordinates after mapping the real course arena.
+stations:
+  HOME:   {x: 0.0, y: 0.0, yaw: 0.0}
+  RACK_A: {x: 1.0, y: 0.5, yaw: 0.0}
+  RACK_B: {x: 1.0, y: -0.5, yaw: 0.0}
+  RACK_C: {x: 2.0, y: 0.5, yaw: 3.14159}
+  RACK_D: {x: 2.0, y: -0.5, yaw: 3.14159}

@@ -16,8 +16,14 @@ install(
     mecanum_task_manager/state_machine.py
     mecanum_task_manager/patrol_manager.py
     mecanum_task_manager/simple_patrol.py
+    mecanum_task_manager/mission_manager.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(
+  FILES
+    mecanum_task_manager/qr_payload.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 ament_package()
-

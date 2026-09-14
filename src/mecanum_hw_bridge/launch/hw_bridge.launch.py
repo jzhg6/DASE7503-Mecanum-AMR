@@ -1,7 +1,7 @@
 # Copyright (c) 2025 Tarik Kahraman
 # SPDX-License-Identifier: MIT
 
-"""Launch the hardware bridge node (Jetson -> STM32 UART). Loads config from YAML."""
+"""Launch the Raspberry Pi -> ESP32 UART bridge with configurable geometry."""
 
 import os
 from ament_index_python.packages import get_package_share_directory
@@ -18,8 +18,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             "serial_port",
-            default_value="/dev/ttyTHS1",
-            description="UART port to STM32 (e.g. /dev/ttyTHS1 or /dev/ttyUSB0)",
+            default_value="/dev/ttyUSB0",
+            description="ESP32 USB UART port or stable udev symlink",
         ),
         DeclareLaunchArgument("baud_rate", default_value="115200"),
         DeclareLaunchArgument("config_file", default_value=config_path,

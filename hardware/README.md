@@ -1,5 +1,10 @@
 # Hardware integration — real robot stack
 
+> Archived upstream description below: Jetson/STM32 links and commands are historical.
+> Current hardware is Raspberry Pi/ESP32: see `../firmware/esp32/`,
+> `../docs/HARDWARE_BRINGUP.md` and `docs/PROTOCOL.md`. STM32 files are now
+> under `legacy_stm32_upstream/`, Jetson notes under `legacy_jetson_upstream/`.
+
 This folder contains the **hardware interface** used for the physical Mecanum AMR: **Jetson Nano** (ROS 2, high-level autonomy) and **STM32** (motor drivers, lift, low-level I/O). The simulation in this repo mirrors the same logic; here we document and provide the code that runs on the real platform.
 
 ## Stack overview

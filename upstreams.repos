@@ -1,0 +1,18 @@
+# Import into an external review directory, never the active src/ tree.
+repositories:
+  dase7503_group2:
+    type: git
+    url: https://github.com/118ovo/DASE7503-Sem1-Group2.git
+    version: d96b6071f32a5d04c0f529ada2d040119676eb1a
+  ros2_amr_mecanumbot:
+    type: git
+    url: https://github.com/Trkkhrmn/ros2_amr_mecanumbot.git
+    version: 385b761c8c96757d2cade890c105f1dbfe187ed4
+  minibot:
+    type: git
+    url: https://github.com/YJ0528/minibot.git
+    version: 349140cfcdfd9b79d6a6c96f9aa2ac924f9f5378
+  mecanum_robot:
+    type: git
+    url: https://github.com/is-buiquocdoanh/mecanum_robot.git
+    version: 3b5a430beeb2f999bfb42ee844ab65665c22b5ea

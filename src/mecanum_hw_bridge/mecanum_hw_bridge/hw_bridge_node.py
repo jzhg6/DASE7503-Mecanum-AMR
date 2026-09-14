@@ -3,14 +3,14 @@
 # SPDX-License-Identifier: MIT
 
 """
-Hardware bridge node: runs on Jetson Nano, forwards /cmd_vel and lift
-service calls to the STM32 over UART. Protocol: ASCII line-based
-(M,w_fl,w_fr,w_rl,w_rr and L,0 / L,1). See hardware/docs/PROTOCOL.md.
+Hardware bridge node: runs on Raspberry Pi, forwards /cmd_vel, servo and
+safety requests to the ESP32 over UART. See hardware/docs/PROTOCOL.md.
 """
 
 from __future__ import annotations
 
 import time
+import math
 from typing import Optional
 
 import rclpy
@@ -19,7 +19,9 @@ from rclpy.node import Node
 from std_srvs.srv import Trigger
 
 from kinematics import (
+    format_enable_frame,
     format_motion_frame,
+    format_servo_frame,
     inverse_kinematics,
     normalize,
 )
@@ -34,8 +36,8 @@ except ImportError:
 
 class HwBridgeNode(Node):
     """
-    ROS 2 node that bridges /cmd_vel and lift services to the STM32 over UART.
-    Implements a command timeout (watchdog): sends zero motion if no cmd_vel received.
+    ROS 2 node that bridges /cmd_vel and lift services to the ESP32 over UART.
+    Motors start disabled and both sides implement independent watchdogs.
     """
 
     def __init__(self) -> None:
@@ -43,7 +45,9 @@ class HwBridgeNode(Node):
 
         self._declare_parameters()
         self._load_parameters()
+        self._enabled = False
         self._serial: Optional[serial.Serial] = None
+        self._next_reconnect_time = 0.0
         self._open_serial()
         self._last_cmd_time = 0.0
         self._last_twist = Twist()
@@ -56,6 +60,12 @@ class HwBridgeNode(Node):
         )
         self._lift_down_srv = self.create_service(
             Trigger, "lift/down", self._lift_down_cb
+        )
+        self._enable_srv = self.create_service(
+            Trigger, "safety/enable", self._enable_cb
+        )
+        self._stop_srv = self.create_service(
+            Trigger, "safety/stop", self._stop_cb
         )
         motion_rate = self._motion_rate_hz
         self._timer = self.create_timer(1.0 / motion_rate, self._timer_cb)
@@ -70,14 +80,18 @@ class HwBridgeNode(Node):
         )
 
     def _declare_parameters(self) -> None:
-        self.declare_parameter("serial_port", "/dev/ttyTHS1")
+        self.declare_parameter("serial_port", "/dev/ttyUSB0")
         self.declare_parameter("baud_rate", 115200)
-        self.declare_parameter("wheel_radius", 0.075)
-        self.declare_parameter("lx", 0.25)
-        self.declare_parameter("ly", 0.35)
-        self.declare_parameter("max_wheel_speed", 15.0)
+        self.declare_parameter("wheel_radius", 0.05)
+        self.declare_parameter("lx", 0.115)
+        self.declare_parameter("ly", 0.125)
+        self.declare_parameter("max_wheel_speed", 10.0)
         self.declare_parameter("cmd_timeout_sec", 0.5)
         self.declare_parameter("motion_rate_hz", 25.0)
+        self.declare_parameter("servo_channel", 0)
+        self.declare_parameter("servo_up_deg", 120.0)
+        self.declare_parameter("servo_down_deg", 35.0)
+        self.declare_parameter("reconnect_interval_sec", 2.0)
 
     def _load_parameters(self) -> None:
         self._serial_port = self.get_parameter("serial_port").value
@@ -88,12 +102,28 @@ class HwBridgeNode(Node):
         self._max_wheel_speed = self.get_parameter("max_wheel_speed").value
         self._cmd_timeout_sec = self.get_parameter("cmd_timeout_sec").value
         self._motion_rate_hz = self.get_parameter("motion_rate_hz").value
+        self._servo_channel = self.get_parameter("servo_channel").value
+        self._servo_up_deg = self.get_parameter("servo_up_deg").value
+        self._servo_down_deg = self.get_parameter("servo_down_deg").value
+        self._reconnect_interval_sec = self.get_parameter(
+            "reconnect_interval_sec"
+        ).value
+        for value in (self._wheel_radius, self._lx, self._ly,
+                      self._max_wheel_speed, self._cmd_timeout_sec,
+                      self._motion_rate_hz, self._reconnect_interval_sec):
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError("geometry, limits and timing must be finite and positive")
+        format_servo_frame(self._servo_channel, self._servo_up_deg)
+        format_servo_frame(self._servo_channel, self._servo_down_deg)
 
     def _open_serial(self) -> None:
+        self._enabled = False
+        self._last_cmd_time = 0.0
         if not HAS_SERIAL:
             self.get_logger().warn(
                 "pyserial not installed; install with: pip install pyserial"
             )
+            self._next_reconnect_time = time.monotonic() + self._reconnect_interval_sec
             return
         try:
             self._serial = serial.Serial(
@@ -105,21 +135,36 @@ class HwBridgeNode(Node):
             self.get_logger().info(
                 "Serial opened: %s @ %d" % (self._serial_port, self._baud_rate)
             )
+            self._write_serial(format_enable_frame(False))
+            self._send_motion(0.0, 0.0, 0.0)
         except Exception as e:
             self.get_logger().error(
                 "Serial open failed: %s. Check port and permissions." % e
             )
             self._serial = None
+            self._next_reconnect_time = (
+                time.monotonic() + self._reconnect_interval_sec
+            )
 
     def _cmd_vel_cb(self, msg: Twist) -> None:
+        if not self._enabled:
+            return
+        if not all(math.isfinite(v) for v in
+                   (msg.linear.x, msg.linear.y, msg.angular.z)):
+            self._enabled = False
+            self._last_cmd_time = 0.0
+            self._write_serial(format_enable_frame(False))
+            return
         self._last_twist = msg
         self._last_cmd_time = time.monotonic()
 
     def _timer_cb(self) -> None:
         if self._serial is None or not self._serial.is_open:
+            if time.monotonic() >= self._next_reconnect_time:
+                self._open_serial()
             return
         now = time.monotonic()
-        if now - self._last_cmd_time > self._cmd_timeout_sec:
+        if not self._enabled or now - self._last_cmd_time > self._cmd_timeout_sec:
             self._send_motion(0.0, 0.0, 0.0)
             return
         t = self._last_twist
@@ -138,33 +183,81 @@ class HwBridgeNode(Node):
         line = format_motion_frame(ws)
         self._write_serial(line)
 
-    def _write_serial(self, s: str) -> None:
+    def _write_serial(self, s: str) -> bool:
         if self._serial is None or not self._serial.is_open:
-            return
+            return False
         try:
             self._serial.write(s.encode("ascii"))
+            return True
         except Exception as e:
             self.get_logger().error("Serial write failed: %s" % e)
+            self._enabled = False
+            try:
+                self._serial.close()
+            except Exception:
+                pass
+            self._serial = None
+            self._next_reconnect_time = (
+                time.monotonic() + self._reconnect_interval_sec
+            )
+            return False
 
     def _lift_up_cb(
         self, request: Trigger.Request, response: Trigger.Response
     ) -> Trigger.Response:
-        self._write_serial("L,1\n")
-        response.success = True
-        response.message = "Lift up sent"
+        if not self._enabled:
+            response.success = False
+            response.message = "Safety latch disabled"
+            return response
+        response.success = self._write_serial(
+            format_servo_frame(self._servo_channel, self._servo_up_deg)
+        )
+        response.message = "Lift up sent" if response.success else "ESP32 offline"
         return response
 
     def _lift_down_cb(
         self, request: Trigger.Request, response: Trigger.Response
     ) -> Trigger.Response:
-        self._write_serial("L,0\n")
-        response.success = True
-        response.message = "Lift down sent"
+        if not self._enabled:
+            response.success = False
+            response.message = "Safety latch disabled"
+            return response
+        response.success = self._write_serial(
+            format_servo_frame(self._servo_channel, self._servo_down_deg)
+        )
+        response.message = "Lift down sent" if response.success else "ESP32 offline"
+        return response
+
+    def _enable_cb(
+        self, request: Trigger.Request, response: Trigger.Response
+    ) -> Trigger.Response:
+        self._last_cmd_time = 0.0
+        self._last_twist = Twist()
+        response.success = self._write_serial(format_enable_frame(True))
+        self._enabled = response.success
+        response.message = (
+            "Enable frame sent; physical outputs/MCU acceptance not verified"
+            if response.success else "ESP32 offline"
+        )
+        return response
+
+    def _stop_cb(
+        self, request: Trigger.Request, response: Trigger.Response
+    ) -> Trigger.Response:
+        self._enabled = False
+        self._last_cmd_time = 0.0
+        motion_ok = self._write_serial("M,0.0000,0.0000,0.0000,0.0000\n")
+        stop_ok = self._write_serial(format_enable_frame(False))
+        response.success = motion_ok and stop_ok
+        response.message = (
+            "Disable frame sent" if response.success else "ESP32 offline"
+        )
         return response
 
     def destroy_node(self, *args, **kwargs) -> None:
         if self._serial is not None and self._serial.is_open:
             try:
+                self._serial.write(format_enable_frame(False).encode("ascii"))
                 self._serial.close()
             except Exception:
                 pass

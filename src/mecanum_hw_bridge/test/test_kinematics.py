@@ -18,10 +18,18 @@ try:
         inverse_kinematics,
         normalize,
         format_motion_frame,
+        format_servo_frame,
+        format_enable_frame,
     )
 except ImportError:
     sys.path.insert(0, _module_dir)
-    from kinematics import inverse_kinematics, normalize, format_motion_frame
+    from kinematics import (
+        inverse_kinematics,
+        normalize,
+        format_motion_frame,
+        format_servo_frame,
+        format_enable_frame,
+    )
 
 
 def test_inverse_kinematics_zero():
@@ -72,6 +80,22 @@ def test_format_motion_frame():
     assert float(parts[2]) == -2.0
 
 
+def test_protocol_control_frames():
+    assert format_servo_frame(0, 90) == "S,0,90.0\n"
+    assert format_servo_frame(0, -20) == "S,0,0.0\n"
+    assert format_servo_frame(0, 200) == "S,0,180.0\n"
+    assert format_enable_frame(True) == "E,1\n"
+    assert format_enable_frame(False) == "E,0\n"
+
+
+def test_motion_frame_rejects_wrong_wheel_count():
+    try:
+        format_motion_frame([1.0, 2.0])
+        assert False, "expected ValueError"
+    except ValueError:
+        pass
+
+
 def run_tests():
     test_inverse_kinematics_zero()
     test_inverse_kinematics_forward()
@@ -79,6 +103,8 @@ def run_tests():
     test_normalize_caps()
     test_normalize_unchanged()
     test_format_motion_frame()
+    test_protocol_control_frames()
+    test_motion_frame_rejects_wrong_wheel_count()
     print("All kinematics tests passed.")
 
 

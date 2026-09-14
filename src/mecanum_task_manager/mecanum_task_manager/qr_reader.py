@@ -12,12 +12,14 @@ QR format: "x:<float>;y:<float>;yaw:<float>"  e.g. "x:3.5;y:1.2;yaw:1.57"
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
 from geometry_msgs.msg import PoseStamped
 from cv_bridge import CvBridge
 import cv2
 import math
+import time
 
 
 class QRReader(Node):
@@ -25,15 +27,24 @@ class QRReader(Node):
     def __init__(self):
         super().__init__('qr_reader')
 
-        self.bridge    = CvBridge()
-        self.detector  = cv2.QRCodeDetector()
-        self.last_data = None   # avoid publishing the same QR repeatedly
+        self.declare_parameter('image_topic', '/camera/image_raw')
+        self.declare_parameter('qr_data_topic', '/qr/data')
+        self.declare_parameter('dedupe_seconds', 2.0)
+
+        self.bridge = CvBridge()
+        self.detector = cv2.QRCodeDetector()
+        self.last_data = None
+        self.last_data_at = 0.0
+        self.dedupe_seconds = float(self.get_parameter('dedupe_seconds').value)
 
         self.image_sub = self.create_subscription(
-            Image, '/camera/image_raw', self.image_callback, 10
+            Image, str(self.get_parameter('image_topic').value), self.image_callback,
+            qos_profile_sensor_data
         )
 
-        self.qr_pub   = self.create_publisher(String,      '/qr/data',      10)
+        self.qr_pub = self.create_publisher(
+            String, str(self.get_parameter('qr_data_topic').value), 10
+        )
         self.goal_pub = self.create_publisher(PoseStamped, '/qr/goal_pose', 10)
 
         self.get_logger().info('QR Reader started, waiting for camera...')
@@ -49,11 +60,15 @@ class QRReader(Node):
 
         data, _, _ = self.detector.detectAndDecode(frame)
 
-        if not data or data == self.last_data:
+        now = time.monotonic()
+        if not data:
+            return
+        if data == self.last_data and now - self.last_data_at < self.dedupe_seconds:
             return
 
         self.last_data = data
-        self.get_logger().info(f'QR okundu: {data}')
+        self.last_data_at = now
+        self.get_logger().info(f'QR decoded: {data}')
 
         # Publish raw payload
         str_msg = String()
@@ -61,9 +76,10 @@ class QRReader(Node):
         self.qr_pub.publish(str_msg)
 
         # Try to parse as goal pose
-        goal = self.parse_goal(data)
-        if goal:
-            self.goal_pub.publish(goal)
+        if data.startswith('x:'):
+            goal = self.parse_goal(data)
+            if goal:
+                self.goal_pub.publish(goal)
 
     # ------------------------------------------------------------------ #
 
@@ -115,4 +131,3 @@ def main(args=None):
 
 if __name__ == '__main__':
     main()
-

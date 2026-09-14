@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -41,7 +41,25 @@ jobs:
           PYTHONPATH=$GITHUB_WORKSPACE/src/mecanum_hw_bridge \
             python3 src/mecanum_hw_bridge/test/test_kinematics.py
 
+      - name: QR mission schema test
+        run: |
+          python3 src/mecanum_task_manager/test/test_qr_payload.py
+
+      - name: Python syntax check
+        run: |
+          python3 -m compileall -q src
+
       - name: STM32 protocol host test
         run: |
-          make -C hardware/stm32 build_host
-          ./hardware/stm32/main_host
+          make -C hardware/legacy_stm32_upstream build_host
+          ./hardware/legacy_stm32_upstream/main_host
+
+  esp32-firmware:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Install PlatformIO
+        run: python3 -m pip install --disable-pip-version-check platformio
+      - name: Build safe-default firmware
+        run: pio run -d firmware/esp32

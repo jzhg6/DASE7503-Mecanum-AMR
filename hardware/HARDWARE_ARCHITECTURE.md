@@ -1,5 +1,8 @@
 # Hardware architecture — real Mecanum AMR
 
+> Historical upstream architecture. Current Raspberry Pi/ESP32 architecture and
+> unimplemented hardware interfaces are described in `../README.md`.
+
 This document describes the physical system this repository was designed for: a large mecanum-wheel AMR with lift, using **Jetson Nano** as the main computer and **STM32** as the motor-driver and I/O controller.
 
 ## Block diagram

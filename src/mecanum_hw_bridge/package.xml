@@ -3,13 +3,14 @@
 <package format="3">
   <name>mecanum_hw_bridge</name>
   <version>1.0.0</version>
-  <description>ROS 2 to STM32 UART bridge for real robot: forwards /cmd_vel and lift commands to the motor driver MCU.</description>
+  <description>ROS 2 to ESP32 UART bridge for mecanum motion, servo lift and safety control.</description>
   <maintainer email="your@email.com">Tarik Kahraman</maintainer>
   <license>MIT</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
   <depend>rclpy</depend>
   <depend>geometry_msgs</depend>
   <depend>std_srvs</depend>
+  <exec_depend>python3-serial</exec_depend>
   <export>
     <build_type>ament_cmake</build_type>
   </export>

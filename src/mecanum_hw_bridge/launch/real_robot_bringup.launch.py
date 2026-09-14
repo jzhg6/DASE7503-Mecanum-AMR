@@ -2,8 +2,8 @@
 # SPDX-License-Identifier: MIT
 
 """
-Launch the hardware bridge for the real robot (Jetson + STM32).
-Use this on the Jetson when the STM32 is connected via UART.
+Launch the hardware bridge for the real robot (Raspberry Pi + ESP32).
+Use this on the Raspberry Pi when the ESP32 is connected via USB UART.
 Optionally override serial_port and baud_rate.
 """
 
@@ -22,8 +22,8 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             "serial_port",
-            default_value="/dev/ttyTHS1",
-            description="UART device (e.g. /dev/ttyTHS1 on Jetson 40-pin, /dev/ttyUSB0 for USB-serial)",
+            default_value="/dev/ttyUSB0",
+            description="ESP32 USB UART device; prefer a stable udev symlink",
         ),
         DeclareLaunchArgument("baud_rate", default_value="115200"),
         Node(
