@@ -4,9 +4,8 @@ project(mecanum_description)
 find_package(ament_cmake REQUIRED)
 
 install(
-  DIRECTORY urdf meshes launch config
+  DIRECTORY urdf launch config
   DESTINATION share/${PROJECT_NAME}
 )
 
 ament_package()
-
