@@ -1,37 +1,35 @@
 # Validation record
 
-Validation date: 2026-09-14
+Validation date: 2026-09-18
 
-This repository is a development starter for the course project. The checks
-below verify source consistency and the safe-default ESP32 build; they do not
-constitute acceptance testing of a physical robot.
+These checks validate source consistency and safe defaults. They do not claim
+that the physical robot has completed a navigation or transport mission.
 
-## Checks completed locally
+## Automated checks
 
-- ESP32 firmware compiled for the `esp32dev` PlatformIO environment with all
-  motor and servo outputs disabled by default.
-- Python source compiled with `compileall`.
-- Mecanum kinematics unit tests passed.
-- QR mission-payload parser unit tests passed.
-- YAML and ROS package XML files parsed successfully.
-- `git diff --check` reported no whitespace errors in first-party files. The
-  pinned, unmodified `references/minibot/` snapshots retain upstream formatting.
+- Pure-C mecanum forward/inverse kinematics, wheel-speed limiting, encoder
+  conversion and PID core are compiled with warnings-as-errors and unit tested.
+- The hardware-profile test verifies the documented GPIO facts and ensures both
+  physical-output compile gates remain zero in committed code.
+- Python source is syntax checked and QR mission-schema tests run without ROS.
+- ROS 2 Humble CI resolves dependencies, performs a colcon build and runs tests.
+- XML, YAML and launch-source parsing are checked before release.
+- `git diff --check` rejects new whitespace errors.
 
-## Checks deferred to ROS CI or physical hardware
+## Not yet physically verified
 
-- A full ROS 2/colcon build and Gazebo launch were not run locally because the
-  available Ubuntu 24.04 WSL environment does not have ROS installed and no
-  Docker runtime is available. GitHub Actions performs the ROS 2 Humble build.
-- Motor polarity, encoder counts, wheel radius, wheelbase, track width, serial
-  device, LiDAR driver, camera calibration and servo travel must be measured on
-  the supplied hardware.
-- Closed-loop wheel PID, encoder odometry, TF validation, docking accuracy,
-  load detection and end-to-end transport/QR missions remain physical-robot
-  acceptance criteria.
+- GPIO continuity and actual board revision.
+- Motor/encoder signs, 1040 count/rev and loaded wheel circumference.
+- PID gains, current limits and 500 ms physical stop time.
+- Acrylic dimensions, camera/LiDAR transforms and loaded footprint.
+- MS200 driver compatibility with the selected Linux image.
+- Raspberry Pi camera/libcamera compatibility and recognition range.
+- Safe dual-servo angles, payload retention and repeatable docking accuracy.
+- End-to-end `QR -> pickup -> lift -> drop-off -> lower -> home` evidence.
 
-## Safety gate
+## Release gate
 
-The ESP32 configuration intentionally contains placeholder pins and sets
-`MOTOR_OUTPUT_ENABLED` and `SERVO_OUTPUT_ENABLED` to `0`. Do not enable either
-output until the wiring and emergency-stop behavior have been verified with
-the chassis lifted and the motor power supply current-limited.
+Committed firmware must keep `MOTOR_OUTPUT_COMPILED_IN=0` and
+`LIFT_OUTPUT_COMPILED_IN=0`. Enabling either is a per-robot calibration change
+and requires the checklist in `docs/HARDWARE_BRINGUP.md`, a physical emergency
+stop and current-limited, raised-chassis testing.

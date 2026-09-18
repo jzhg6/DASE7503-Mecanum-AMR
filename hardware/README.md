@@ -1,53 +1,27 @@
-# Hardware integration — real robot stack
+# Physical hardware profile
 
-> Archived upstream description below: Jetson/STM32 links and commands are historical.
-> Current hardware is Raspberry Pi/ESP32: see `../firmware/esp32/`,
-> `../docs/HARDWARE_BRINGUP.md` and `docs/PROTOCOL.md`. STM32 files are now
-> under `legacy_stm32_upstream/`, Jetson notes under `legacy_jetson_upstream/`.
+The active robot is a Raspberry Pi plus ESP32-S3 mecanum platform. The ESP32
+runs ESP-IDF and micro-ROS over Wi-Fi; there is no active ASCII UART bridge.
 
-This folder contains the **hardware interface** used for the physical Mecanum AMR: **Jetson Nano** (ROS 2, high-level autonomy) and **STM32** (motor drivers, lift, low-level I/O). The simulation in this repo mirrors the same logic; here we document and provide the code that runs on the real platform.
+```text
+Raspberry Pi                         ESP32-S3 course controller
+-------------                        -------------------------
+Nav2 -------- /cmd_vel ------------> closed-loop wheel PID
+safety ------ /base/enable --------> compile gate + runtime latch
+lift service  /lift/command -------> two calibrated servos
+TF adapter <- /wheel/odom ---------- four quadrature encoders
+status <----- /base/enabled -------- firmware acknowledgement
+status <----- /lift/state ---------- open-loop command acknowledgement
 
-## Stack overview
-
-| Component   | Role |
-|------------|------|
-| **Jetson Nano** | Runs ROS 2 Humble: Nav2, SLAM, QR/task manager, kinematics. Publishes `/cmd_vel` and lift commands. Talks to STM32 over UART. |
-| **STM32**        | Receives motion and lift commands via UART. Drives 4× mecanum motors (PWM/encoder feedback) and lift actuator. Optionally reports telemetry (currents, encoder counts). |
-
-```
-  ┌─────────────────────────────────────────────────────────────┐
-  │  Jetson Nano (Ubuntu 20.04 / ROS 2 Humble)                  │
-  │  Nav2, SLAM, QR, task manager  →  /cmd_vel, /lift/up|down  │
-  │  mecanum_hw_bridge (this repo) →  serial port               │
-  └───────────────────────────────────┬─────────────────────────┘
-                                      │ UART (e.g. /dev/ttyTHS1 or USB‑serial)
-                                      ▼
-  ┌─────────────────────────────────────────────────────────────┐
-  │  STM32 (motor driver MCU)                                    │
-  │  Parses protocol → PWM for 4 wheels + lift                   │
-  └─────────────────────────────────────────────────────────────┘
+MS200 -> /scan -> SLAM/AMCL/Nav2
+Pi camera -> /camera/image_raw -> bounded QR task parser
 ```
 
-## Contents
+The authoritative project-side values are in
+`../firmware/esp32/components/robot_config/include/board_config.h`. See
+`HARDWARE_PROFILE.md` for their provenance and verification state, and
+`../docs/HARDWARE_BRINGUP.md` for the mandatory bench sequence.
 
-| Path | Description |
-|------|-------------|
-| [HARDWARE_ARCHITECTURE.md](HARDWARE_ARCHITECTURE.md) | Block diagram, connections, Jetson and STM32 roles. |
-| [docs/PROTOCOL.md](docs/PROTOCOL.md) | UART frame format: motion commands, lift, optional telemetry. |
-| [jetson/](jetson/) | Notes and link to the ROS 2 node (package `mecanum_hw_bridge` in repo `src/`). |
-| [stm32/](stm32/) | STM32-side C code: protocol parser and stubs for motor/lift control. |
-
-## Quick start (on Jetson, with real robot)
-
-1. Connect STM32 via UART (on-board `ttyTHS1` or USB–serial adapter, e.g. `/dev/ttyUSB0`).
-2. Build and source the workspace (including `mecanum_control` for kinematics).
-3. Run the hardware bridge with the correct port and baud rate:
-
-```bash
-ros2 launch mecanum_hw_bridge real_robot_bringup.launch.py serial_port:=/dev/ttyTHS1
-```
-
-4. Run your autonomy stack as usual; `/cmd_vel` and lift service calls will be forwarded to the STM32.
-
-**Full step-by-step (STM32 + Jetson + first test):** [docs/REAL_ROBOT_QUICKSTART.md](../docs/REAL_ROBOT_QUICKSTART.md).  
-Jetson-only details: [docs/DEPLOYMENT_JETSON.md](../docs/DEPLOYMENT_JETSON.md).
+`legacy_stm32_upstream/` and `legacy_jetson_upstream/` are retained only for
+the history of the MIT base repository. They are not built or used by the
+Raspberry Pi/ESP32-S3 stack.

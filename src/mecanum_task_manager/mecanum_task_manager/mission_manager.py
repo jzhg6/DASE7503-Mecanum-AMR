@@ -16,7 +16,7 @@ from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.node import Node
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 import yaml
 
@@ -33,6 +33,8 @@ class MissionManager(Node):
         self.declare_parameter("home_station", "HOME")
         self.declare_parameter("map_frame", "map")
         self.declare_parameter("allow_mock_lift", False)
+        self.declare_parameter("allow_pose_only_docking", False)
+        self.declare_parameter("require_base_enabled", True)
         self.declare_parameter("operation_timeout_sec", 120.0)
 
         self._stations = self._load_stations(
@@ -46,6 +48,7 @@ class MissionManager(Node):
         self._generation = 0
         self._goal_handle = None
         self._deadline = 0.0
+        self._base_enabled = False
         self._timeout = float(self.get_parameter("operation_timeout_sec").value)
         if not math.isfinite(self._timeout) or self._timeout <= 0:
             raise ValueError("operation_timeout_sec must be finite and positive")
@@ -56,6 +59,7 @@ class MissionManager(Node):
         self._safety_stop = self.create_client(Trigger, "safety/stop")
 
         self.create_subscription(String, "/qr/data", self._qr_callback, 10)
+        self.create_subscription(Bool, "/base/enabled", self._base_callback, 10)
         self._state_pub = self.create_publisher(String, "/robot_state", 10)
         self._status_pub = self.create_publisher(String, "/mission/status", 10)
         self.create_service(Trigger, "mission/reset", self._reset_callback)
@@ -81,12 +85,30 @@ class MissionManager(Node):
                 raise RuntimeError(f"station {name!r} has non-finite coordinates")
         return stations
 
+    def _base_callback(self, message: Bool) -> None:
+        was_enabled = self._base_enabled
+        self._base_enabled = bool(message.data)
+        if was_enabled and not self._base_enabled and self._active is not None:
+            self._fail("base controller disarmed during mission")
+
     def _qr_callback(self, message: String) -> None:
-        # Real actuator completion/docking feedback is not implemented yet.
-        # Keep this coordinator simulation-only until that interface is added.
-        if not (self.get_parameter("allow_mock_lift").value and
-                self.get_parameter("use_sim_time").value):
-            self.get_logger().warning("Mission disabled: real lift/docking feedback required")
+        simulation_ready = bool(
+            self.get_parameter("use_sim_time").value
+            and self.get_parameter("allow_mock_lift").value
+        )
+        real_ready = bool(
+            not self.get_parameter("use_sim_time").value
+            and self.get_parameter("allow_pose_only_docking").value
+            and (
+                self._base_enabled
+                or not self.get_parameter("require_base_enabled").value
+            )
+        )
+        if not (simulation_ready or real_ready):
+            self.get_logger().warning(
+                "mission rejected: enable the base and explicitly allow "
+                "pose-only docking after physical calibration"
+            )
             return
         if self._machine.state != RobotState.IDLE:
             self.get_logger().warning("QR ignored while a mission is active")

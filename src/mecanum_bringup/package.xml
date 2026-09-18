@@ -3,7 +3,7 @@
   <name>mecanum_bringup</name>
   <version>1.0.0</version>
   <description>Top-level launch files and configurations for the Mecanum AMR system</description>
-  <maintainer email="your@email.com">Tarik Kahraman</maintainer>
+  <maintainer email="maintainers@example.invalid">DASE7503 project contributors</maintainer>
   <license>MIT</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
   <exec_depend>mecanum_description</exec_depend>

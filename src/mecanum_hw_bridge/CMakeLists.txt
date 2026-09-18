@@ -11,19 +11,8 @@ install(
 
 install(
   PROGRAMS
-    mecanum_hw_bridge/hw_bridge_node.py
+    mecanum_hw_bridge/hardware_supervisor.py
   DESTINATION lib/${PROJECT_NAME}
 )
-
-install(
-  FILES
-    mecanum_hw_bridge/kinematics.py
-    mecanum_hw_bridge/__init__.py
-  DESTINATION lib/${PROJECT_NAME}
-)
-
-# Kinematics unit test: run with
-#   PYTHONPATH=$PWD/src/mecanum_hw_bridge python3 src/mecanum_hw_bridge/test/test_kinematics.py
-# or: make test (colcon) + CI runs this package's test script explicitly
 
 ament_package()

@@ -1,142 +1,155 @@
 # DASE7503 Autonomous Mecanum AMR
 
-DASE7503 课程项目开发仓库：一台由 Raspberry Pi 和 ESP32 协同控制的麦克纳姆轮搬运小车，使用 LiDAR、相机和舵机完成建图定位、自动寻路、二维码任务识别与取放搬运。
+DASE7503 课程项目开发仓库：Raspberry Pi 与 ESP32-S3 协同控制四轮麦克纳姆小车，
+使用 ORADAR MS200、树莓派相机和双舵机完成建图定位、自动寻路、二维码任务识别
+和取放搬运。
 
-> 当前状态：开发起点，尚非完成的实车项目。已加入 ROS 2 串口桥、QR 任务解析、仿真任务状态机和可编译 ESP32 骨架。没有在本机运行完整 ROS/Gazebo；电机和舵机输出均默认关闭，实车搬运任务默认拒绝执行。
+当前版本已经按往届项目使用的**同款硬件**重新设计底层，但不是往届代码的移植：
+GPIO、编码器分辨率、轮周长和传感器接口作为硬件事实记录；ESP-IDF 固件、运动学、
+PID、里程计、micro-ROS 生命周期、安全监督、QR 和任务流程均在本仓库独立实现。
 
-当前欠缺：编码器/PID 与 odom/TF、实际型号的相机/LiDAR 驱动、对接控制、舵机完成反馈、载荷检测和实体搬运验证。上游升降服务只是 mock，平面运动插件也不模拟麦轮滚子接触物理；当前仿真成功不能作为载荷已被搬起的证据。
+> 状态：ROS 工作区和纯 C 控制核具备自动化构建验证；完整 ESP-IDF 固件仍需在
+> Linux ESP-IDF/micro-ROS 工具链中构建，且尚未经过本组实车验收。电机和舵机输出
+> 默认在编译期关闭；舵机没有位置/载荷传感器，不能把命令确认当成搬运成功。
 
-## 系统架构
+## 架构
 
 ```text
-Camera -> QR reader -> Mission manager -> Nav2 -> /cmd_vel
-                          |                         |
-                          v                         v
-                    lift services          mecanum_hw_bridge
-                                                    |
-                                              USB UART 115200
-                                                    |
-                                                  ESP32
-                                         4 motor drivers + servo
+Pi camera -> QR reader -> mission manager -> Nav2 -> /cmd_vel
+                                |                         |
+                                v                         v
+                       lift/up|down services       ESP32-S3 micro-ROS
+                                |                 wheel PID + watchdog
+                                v                         |
+                         /lift/command              /wheel/odom
 
-LiDAR -> /scan -> SLAM Toolbox / AMCL -> map -> Nav2
-Encoders (planned) -> ESP32 telemetry -> odometry / EKF
+MS200 -> /scan -> SLAM Toolbox / AMCL -> map       |
+                                                     v
+                              hardware supervisor -> /odom + odom TF
 ```
 
-- Raspberry Pi：ROS 2、相机、二维码解析、任务调度、SLAM/AMCL、Nav2 和安全监控。
-- ESP32：四轮 PWM、舵机、通信看门狗和最终急停执行。
-- 笔记本：RViz、仿真、远程调试和日志分析；不应成为真实小车的安全依赖。
+- Raspberry Pi：ROS 2、相机、QR、任务状态机、SLAM/AMCL、Nav2、TF 与硬件确认。
+- ESP32-S3：编码器采样、四轮闭环 PID、里程计积分、双舵机和最终软件看门狗。
+- 笔记本：RViz、仿真、调参和日志；不作为实车安全依赖。
+- 物理急停：独立切断电机驱动使能或动力电源。
 
-## 技术基线
+## 关键安全行为
 
-- Ubuntu 22.04 64-bit + ROS 2 Humble，作为 2026 年秋季学期的冻结版本；Humble 官方支持到 2027 年 5 月。
-- Gazebo Classic 11 遗留仿真基线（已停止维护，仅为复现实验保留）。
-- Nav2 MPPI `Omni` 运动模型，允许麦轮横向速度 `vy`。
-- ESP32 PlatformIO/Arduino 固件，通过 USB 串口与 Raspberry Pi 通信。
+- 固件的 `MOTOR_OUTPUT_COMPILED_IN`、`LIFT_OUTPUT_COMPILED_IN` 默认均为 `0`。
+- ESP32 上电默认未使能；micro-ROS 断线或非法速度会停止并解除使能，
+  `/cmd_vel` 超过 500 ms 则保持使能但强制轮速目标为零。
+- `/safety/enable`、`/safety/stop`、`/lift/up`、`/lift/down` 等待 MCU 状态确认。
+- `/wheel/odom` 经有限值和四元数检查后才发布为 `/odom` 和 TF。
+- QR 只提供任务 ID 和站点 ID；坐标只从本地 `stations.yaml` 白名单读取。
+- 实车“仅靠 Nav2 位姿对接”默认关闭，必须在标定后显式启用。
 
-Humble 是当前参考代码的兼容基线，尚待与老师的系统镜像确认。如果使用 Raspberry Pi 5 或课程统一为 Ubuntu 24.04/Jazzy，应先核实镜像及驱动支持，再迁移 `ros_gz`/Gazebo Harmonic，不能把 Classic 插件直接用于新版 Gazebo。
+## 软件基线
+
+- Ubuntu 22.04 64-bit + ROS 2 Humble。
+- Gazebo Classic 11 仅用于现有仿真；它不模拟麦轮滚子和真实载荷接触。
+- Nav2 MPPI `Omni` 模型，允许横向速度 `vy`。
+- ESP-IDF + `micro_ros_espidf_component` Humble 分支，UDP Agent 默认端口 8090。
+- `camera_ros/camera_node` 发布 `/camera/image_raw`。
+- ORADAR MS200 驱动发布 `/scan`，默认 `/dev/oradar`、230400 baud。
+
+不要混用 Humble 固件与 Jazzy Agent。若课程统一使用 Ubuntu 24.04/Jazzy，应整体迁移
+ROS、Agent、micro-ROS 组件和仿真栈，而不是只替换其中一个组件。
 
 ## 目录
 
 ```text
-src/
-  mecanum_description/     URDF/Xacro：底盘、轮子、LiDAR、相机和搬运平台
-  mecanum_simulation/      仓库世界与 QR 站点
-  mecanum_navigation/      SLAM Toolbox、AMCL、Nav2 和地图
-  mecanum_control/         麦轮运动学与仿真搬运机构
-  mecanum_hw_bridge/       Raspberry Pi <-> ESP32 串口桥
-  mecanum_task_manager/    QR 读取、任务解析和搬运状态机
-firmware/esp32/             ESP32 安全固件骨架
-hardware/                   协议及上游 STM32 参考实现
-docs/                       课程范围、上游评估、架构和实车联调说明
+firmware/esp32/             独立 ESP-IDF/micro-ROS 固件和主机单元测试
+hardware/                   同款硬件事实、接口和失败边界
+src/mecanum_description/    独立基本几何 Xacro；等待本车尺寸复核
+src/mecanum_hw_bridge/      Agent、硬件确认服务、odom 与 TF 监督器
+src/mecanum_navigation/     SLAM Toolbox、AMCL、全向 Nav2 和地图
+src/mecanum_task_manager/   连续 QR 识别、白名单任务和搬运状态机
+src/mecanum_simulation/     仓库世界与 QR 站点
+docs/                       实车联调、来源取舍和验证记录
 ```
 
-## 快速开始
-
-### 1. 安装与构建
+## 构建 ROS 工作区
 
 ```bash
 sudo apt update
 sudo apt install -y ros-humble-navigation2 ros-humble-nav2-bringup \
   ros-humble-slam-toolbox ros-humble-cv-bridge ros-humble-gazebo-ros-pkgs \
-  python3-opencv python3-yaml python3-serial
+  ros-humble-micro-ros-agent ros-humble-camera-ros python3-opencv python3-yaml
 
 mkdir -p ~/dase7503_ws/src
-git clone git@github.com:jzhg6/DASE7503-Mecanum-AMR.git ~/dase7503_ws/src/DASE7503-Mecanum-AMR
+git clone git@github.com:jzhg6/DASE7503-Mecanum-AMR.git \
+  ~/dase7503_ws/src/DASE7503-Mecanum-AMR
 cd ~/dase7503_ws
 rosdep install --from-paths src --ignore-src -r -y
 colcon build --symlink-install
 source install/setup.bash
 ```
 
-### 2. 仿真启动入口（待 ROS 环境联调）
+MS200 ROS 2 驱动可能需要按设备附带 SDK/官方仓库放进同一个工作区，包名和可执行文件
+必须提供 `oradar_lidar/oradar_scan`。不要从往届压缩包复制未知许可的 vendored SDK。
+
+## 仿真
 
 ```bash
 ros2 launch mecanum_bringup sim_bringup.launch.py \
   launch_navigation:=true launch_task_manager:=true
 ```
 
-先建图并将 `stations.yaml` 的示例坐标替换为真实可达点，再发送任务。
-当前世界内继承的 QR 纹理是旧坐标格式，不是下述任务格式；开发测试可发布 `/qr/data`，随后换成自己的 QR 图样。
-`allow_mock_lift` 仅在仿真启动入口开启；任务协调器还要求 `use_sim_time=true`。实车入口不启用它。
-
-示例任务二维码内容：
+示例任务二维码：
 
 ```json
 {"mission_id":"M001","pickup":"RACK_A","dropoff":"RACK_B","item":"BOX_01"}
 ```
 
-也支持更易手工生成的格式：
+或：
 
 ```text
 mission_id:M001;pickup:RACK_A;dropoff:RACK_B;item:BOX_01
 ```
 
-站点坐标在 `src/mecanum_task_manager/config/stations.yaml` 中维护。二维码只携带站点 ID，不直接信任任意坐标，可减少错误或恶意二维码让小车越界的风险。
+## 实车启动
 
-### 3. 再接真实硬件
-
-1. 按 `docs/HARDWARE_BRINGUP.md` 完成独立电源、共地、急停和架空轮测试。
-2. 修改 `firmware/esp32/include/robot_config.h` 的引脚和电机方向。
-3. 保持 `MOTOR_OUTPUT_ENABLED` 和 `SERVO_OUTPUT_ENABLED` 为 `0` 完成串口测试，再按实物分别配置引脚和开启输出。
-4. 烧录 ESP32 后启动：
+先完整执行 [实车联调手册](docs/HARDWARE_BRINGUP.md)。在无动力状态确认 Agent、
+编码器、MS200 和相机后，启动基础栈：
 
 ```bash
-ros2 launch mecanum_hw_bridge real_robot_bringup.launch.py serial_port:=/dev/ttyUSB0
-ros2 service call /safety/enable std_srvs/srv/Trigger '{}'
+ros2 launch mecanum_bringup real_bringup.launch.py \
+  launch_navigation:=false launch_task_manager:=false
 ```
 
-急停：
+显式使能和急停：
 
 ```bash
+ros2 service call /safety/enable std_srvs/srv/Trigger '{}'
 ros2 service call /safety/stop std_srvs/srv/Trigger '{}'
+```
+
+完成地图、站点、轮速 PID、里程计和舵机验收后，才能运行真实任务：
+
+```bash
+ros2 launch mecanum_bringup real_bringup.launch.py \
+  launch_navigation:=true launch_task_manager:=true \
+  allow_pose_only_docking:=true
 ```
 
 ## 验收顺序
 
-1. 单轮方向与急停。
-2. 四轮前进、横移、旋转和 `/cmd_vel` 超时停车。
-3. LiDAR TF、静态障碍物与手推建图。
-4. AMCL 重定位和单点 Nav2。
-5. 相机连续 QR 识别与去重。
-6. 单次 `pickup -> lift -> dropoff -> lower -> home`。
-7. 加入动态障碍、重复 QR、通信中断和低电压测试。
+1. GPIO 连续性、编码器轮序/方向和物理急停。
+2. 单轮 PID、四轮前进/横移/旋转和三类失效停车。
+3. 2 m 直行、1 m 横移和 360° 旋转里程计标定。
+4. MS200 TF、手推建图、AMCL 和单点 Nav2。
+5. 相机连续 QR 识别、去重和非法任务拒绝。
+6. 双舵机空载标定，再测试一次取货、送货、放下和回家。
+7. 通信中断、动态障碍、重复二维码、低电压和急停恢复。
 
-详细课程范围见 [docs/COURSE_PROJECT_SCOPE.md](docs/COURSE_PROJECT_SCOPE.md)，四个参考仓库的逐项取舍见 [docs/UPSTREAM_INTEGRATION.md](docs/UPSTREAM_INTEGRATION.md)。
+## 来源与学术诚信
 
-## 安全与限制
-
-- 不要用 L298N 直接驱动超过其电流能力的电机；按老师实际提供的电机堵转电流选择驱动器。
-- 电机电源与 Raspberry Pi 5V 电源分开，逻辑地共地。
-- 真实急停必须切断电机驱动使能或电机电源，ROS 服务只能作为第二层急停。
-- 当前 ESP32 骨架是开环 PWM，不发布轮里程计；可靠定位和低速控制需要编码器闭环 PID。真实导航在 `/odom` 和 `odom -> base_footprint` 接通前不能工作。
-- `Trigger.success` 目前只表示写出串口帧，不代表 MCU 接收或机械动作完成。
-- 未测量底盘尺寸、轮径、减速比、编码器分辨率、舵机行程和 LiDAR 型号前，仓库中的数值只是安全起点。
-
-## 来源与许可
-
-本仓库以 MIT 许可的 `Trkkhrmn/ros2_amr_mecanumbot` 为代码基线并保留提交历史。`references/minibot/` 收录带许可的启动、SLAM、twist mux 样例，排除在当前构建之外；另外两个仓库以固定版本来源记录和独立实现整合。四个版本在 [upstreams.repos](upstreams.repos) 中锁定。详见 [来源评估](docs/UPSTREAM_INTEGRATION.md)、[许可记录](THIRD_PARTY_NOTICES.md) 和 [验证记录](docs/VALIDATION.md)。
+往届同款硬件仓库是硬件事实参考，不是本仓库的代码来源。清洁重写边界和使用的事实
+见 [HARDWARE_PROFILE.md](hardware/HARDWARE_PROFILE.md) 与
+[UPSTREAM_INTEGRATION.md](docs/UPSTREAM_INTEGRATION.md)。MIT 基线及保留样例见
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。报告必须分别说明参考内容、本组实现、
+本组标定数据和本组实验结果。
 
 ## License
 
-MIT。上游版权声明必须保留；参见 [LICENSE](LICENSE)。
+MIT；上游版权与许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

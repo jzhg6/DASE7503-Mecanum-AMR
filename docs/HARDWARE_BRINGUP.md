@@ -1,111 +1,112 @@
 # 实车联调手册
 
-当前阶段说明：以下是逐步开发/验收流程；编码器/PID、odom/TF、真实对接与舵机完成反馈尚未实现。固件的电机、舵机编译开关均为 0，所有板级输出引脚为 -1。电机和舵机使用分离的 LEDC 组，避免 PWM 频率冲突。串口服务返回仅说明帧已发送。
+本仓库已经按同款课程硬件重构，但默认仍不能驱动电机或舵机：ESP32-S3
+配置中的两个编译期开关均为 `0`。GPIO、编码器分辨率和 MS200 参数来自同款
+硬件的公开资料，电机方向、舵机角度、有效轮径和机械尺寸必须在自己的实物上复核。
 
-## 0. 在接电前填写硬件表
+## 1. 接电前
 
-| 参数 | 实测值 |
-|---|---|
-| Raspberry Pi 型号 / RAM | 待填 |
-| ESP32 型号 | 待填 |
-| 电机型号、减速比、堵转电流 | 待填 |
-| 编码器每输出轴一圈计数 | 待填 |
-| 驱动器型号与连续/峰值电流 | 待填 |
-| 麦轮直径、轮宽、滚子方向 | 待填 |
-| 前后轮中心半距 `lx` | 待填 |
-| 左右轮中心半距 `ly` | 待填 |
-| LiDAR 型号、串口和波特率 | 待填 |
-| 相机型号、分辨率、视场角 | 待填 |
-| 舵机型号、供电、上下限 | 待填 |
-| 电池电压、容量、保险丝 | 待填 |
+- 将真实蘑菇急停串入电机驱动使能或电机电源；ROS 服务不能替代硬件急停。
+- 电机、舵机和树莓派分路供电并共逻辑地，按堵转电流配置保险丝和限流。
+- 用万用表核对 `hardware/HARDWARE_PROFILE.md` 的 GPIO 与板上接口。
+- 将小车架空，拆下舵机连杆；首次烧录时不要接电机动力电源。
 
-这些值决定驱动器是否安全、URDF 是否正确、麦轮运动学和 Nav2 footprint 是否可用。
+## 2. Linux 工具链与 micro-ROS
 
-## 1. 电气安全
-
-- 真实蘑菇急停串入电机驱动使能或电机电源；不要只依赖软件。
-- 电机电源、舵机电源和 Raspberry Pi 5V 分路，按额定电流选保险丝；逻辑地共地。
-- 舵机不要从 Raspberry Pi 或 ESP32 的 5V/3.3V 引脚取大电流。
-- 电机端加抑制，电源入口加反接保护和足够电容；LiDAR/相机线远离电机线。
-- 首次测试将小车架空，轮子不得接触桌面。
-
-## 2. ESP32 无动力串口测试
-
-1. 保持 `firmware/esp32/include/robot_config.h` 中 `MOTOR_OUTPUT_ENABLED 0`。
-2. 按实际 ESP32 板型修改 PlatformIO board，填写舵机和电机引脚，确认没有启动绑带冲突。当前仅编译验证了经典 ESP32 `esp32dev`，不等于 ESP32-S3 的验证。
-3. 烧录固件，打开串口监视器，应看到 `READY` 和周期遥测。
-4. 手工发送：
-
-```text
-E,1
-M,1.0,1.0,1.0,1.0
-S,0,90
-E,0
-```
-
-5. 停止发送 `M`，确认 500 ms 后看门狗状态改变；即使控制被允许也不得残留非零输出。
-
-## 3. 单轮与轮序测试
-
-将 `MOTOR_OUTPUT_ENABLED` 改为 `1` 前，确认急停可以物理切断驱动。一次只接一台电机并限制电源电流：
-
-- `M,1,0,0,0` 只转 front-left；
-- `M,0,1,0,0` 只转 front-right；
-- `M,0,0,1,0` 只转 rear-left；
-- `M,0,0,0,1` 只转 rear-right。
-
-正值应让该轮产生车体向前的力。若相反，只改对应 `MOTOR_*_INVERT`，不要在多个软件层同时反号。
-
-## 4. 麦轮运动学验收
-
-低速、架空后再落地，依次执行：
+当前软件基线是 Ubuntu 22.04 / ROS 2 Humble。ESP-IDF 与 micro-ROS 也必须
+使用兼容的 Humble 分支；不要同时运行 Jazzy Agent 和 Humble 固件。
 
 ```bash
-# forward
-ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 0.1, y: 0.0}, angular: {z: 0.0}}"
+# Raspberry Pi
+source /opt/ros/humble/setup.bash
+ros2 run micro_ros_agent micro_ros_agent udp4 --port 8090
 
-# left strafe
-ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 0.0, y: 0.1}, angular: {z: 0.0}}"
-
-# rotate CCW
-ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist \
-  "{linear: {x: 0.0, y: 0.0}, angular: {z: 0.2}}"
+# ESP32 开发环境
+source ~/esp/esp-idf/export.sh
+cd firmware/esp32
+idf.py set-target esp32s3
+idf.py menuconfig
+idf.py build flash monitor
 ```
 
-确认 `/cmd_vel` 停止后 0.5 s 内停车、`/safety/stop` 立即停车、拔掉 Raspberry Pi USB 后 ESP32 独立停车。
+Wi-Fi 名称、密码、Agent IP、端口和 Domain ID 通过 `idf.py menuconfig` 设置，
+不得提交到 Git。无动力状态下确认以下话题出现：
 
-## 5. 几何与里程计
+```bash
+ros2 topic list | grep -E 'wheel/odom|base/enabled|lift/state'
+ros2 topic hz /wheel/odom
+```
 
-- 测量轮胎受载后的有效半径，而不是目录标称半径。
-- `lx` 是底盘中心到前/后轮中心的距离，`ly` 是中心到左/右轮中心的距离。
-- 用 2 m 直行、1 m 横移和 360 度旋转分别标定轮径、横移比例和 `lx+ly`。
-- 优先使用四轮编码器闭环并发布里程计；没有编码器时只能把开环里程计用于早期演示。
-- 后续用 `robot_localization` 融合轮速、IMU（若提供）和 LiDAR/视觉信息。
+## 3. 编码器与轮序
 
-## 6. LiDAR 与导航
+保持 `MOTOR_OUTPUT_COMPILED_IN 0`，依次手转 FL、FR、RL、RR。只有对应轮速
+应改变；车轮朝“使车辆前进”的方向转动时，测得速度应为正。若符号错误，只改
+对应的 `ENCODER_*_DIRECTION`。标记轮胎并转动一整圈，确认约为 1040 count。
 
-1. 只启动 robot_state_publisher 和 LiDAR，检查 `/scan` 的 frame 和方向。
-2. RViz 中静止观察墙面，移动小车时检查 TF 是否连续。
-3. 手动遥控建图并闭环回到起点；保存地图。
-4. 切换 AMCL，测试多个初始位置恢复。
-5. 从 0.1 m/s、较大 inflation 开始调 Nav2；确认 footprint 后再提高速度。
-6. 麦轮需要 Omni 模型；若控制器输出始终没有 `linear.y`，检查 MPPI `motion_model: Omni`。
+## 4. 单轮闭环与失效停车
 
-## 7. 相机、QR 与搬运
+确认物理急停有效后，将 `MOTOR_OUTPUT_COMPILED_IN` 改为 `1`，仍保持小车架空。
+启动真实硬件栈并显式使能：
 
-- 相机安装后重新测量其 TF；避免舵机动作遮挡视野。
-- 在 0.4、0.8、1.2 m 和不同角度/光照下统计识别率。
-- QR 仅使用 `stations.yaml` 中的站点 ID；未知站点必须拒绝。
-- 先用空载测试舵机上下限，再逐步增加载荷；舵机机械限位应留余量。
-- 每个任务使用唯一 `mission_id`；已完成的 ID 在本次进程中不会重复执行，重启不保留，持久化是后续工作。任务协调器目前仅允许仿真 mock 模式，实车需先实现动作完成反馈。
+```bash
+ros2 launch mecanum_bringup real_bringup.launch.py \
+  launch_sensors:=false launch_navigation:=false launch_task_manager:=false
+ros2 service call /safety/enable std_srvs/srv/Trigger '{}'
+```
 
-## 8. 每次演示前
+用很小的 `/cmd_vel` 依次测试前进、横移和旋转。只在一个软件层修正电机方向。
+停止发布后必须在 500 ms 内停车；关闭 Agent 或断开 Wi-Fi 后也必须停车并保持
+未使能，直到再次调用 `/safety/enable`。
 
-- [ ] 电池电压正常，保险丝与急停有效。
-- [ ] 轮子、轮毂、亚克力板和载荷固定。
-- [ ] LiDAR、相机、舵机和 USB 线有应力释放。
-- [ ] 地图版本、站点坐标和 Nav2 参数与场地一致。
-- [ ] `/safety/stop`、物理急停和通信断开均已试过。
-- [ ] 日志和录像已开启，现场有人工接管者。
+```bash
+ros2 service call /safety/stop std_srvs/srv/Trigger '{}'
+```
+
+## 5. 几何、PID 与里程计
+
+- 在载荷状态下测量轮子有效周长、前后轮中心距和左右轮中心距。
+- 先分别调四轮低速 PID，再做四轮协调；避免用高增益掩盖轮序或机械问题。
+- 用 2 m 直行、1 m 横移、360° 旋转校准轮径、横移误差和 `lx+ly`。
+- 检查 `/odom` 与 `odom -> base_footprint` 连续且只有一个 TF 发布者。
+- 麦轮在光滑地面容易横向打滑，编码器里程计误差不能用虚假的小协方差掩盖。
+
+## 6. MS200 与相机
+
+创建稳定的 `/dev/oradar` udev 链接后启动传感器：
+
+```bash
+ros2 launch mecanum_hw_bridge sensors.launch.py
+ros2 topic hz /scan
+ros2 topic hz /camera/image_raw
+```
+
+MS200 起点参数是 230400 baud、0.05-20 m、10 Hz。树莓派相机通过
+`camera_ros/camera_node` 发布连续图像；不再用 `sudo rpicam-still` 循环截图。
+若当前 Pi 相机只在 Raspberry Pi OS 的 `rpicam-*` 下工作，应先解决 libcamera
+版本匹配，而不是让任务节点以 root 权限运行。
+
+## 7. 双舵机与搬运
+
+保持 `LIFT_OUTPUT_COMPILED_IN 0`，先用示波器或舵机测试仪确认 GPIO 8/21。
+拆下连杆后确定左右舵机的安全上下角度，更新四个 `LIFT_*_DEG`，再开启编译开关。
+调用 `/lift/up` 和 `/lift/down` 返回成功只代表固件确认命令，不代表抓住了货物。
+
+实车任务还需要显式确认允许“仅靠导航位姿对接”：
+
+```bash
+ros2 launch mecanum_bringup real_bringup.launch.py \
+  launch_navigation:=true launch_task_manager:=true \
+  allow_pose_only_docking:=true
+```
+
+只有在每个站点的停靠误差和空载舵机动作都验收后才能打开该参数。二维码只携带
+`stations.yaml` 中的站点 ID，不能直接给小车任意坐标。
+
+## 8. 演示前检查
+
+- [ ] 物理急停、`/safety/stop`、Wi-Fi/Agent 断开均已验证。
+- [ ] 四轮方向、编码器方向、轮径、轮距和 PID 有本车测试记录。
+- [ ] 地图、footprint、LiDAR/相机 TF 和站点坐标来自当前装配。
+- [ ] 舵机供电独立，机械限位留有余量，空载动作重复可靠。
+- [ ] 没有把 `/lift/state` 当作载荷传感器。
+- [ ] 现场有人可立即断电，并保存本组自己的 rosbag、日志和录像。

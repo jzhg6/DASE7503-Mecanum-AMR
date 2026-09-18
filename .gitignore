@@ -36,6 +36,10 @@ Thumbs.db
 *.local
 
 # Firmware and local validation outputs
-.pio/
+firmware/esp32/build/
+firmware/esp32/sdkconfig
+firmware/esp32/sdkconfig.old
+firmware/esp32/managed_components/
+firmware/esp32/dependencies.lock
 .venv/
 hardware/legacy_stm32_upstream/main_host
