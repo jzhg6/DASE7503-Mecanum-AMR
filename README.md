@@ -24,6 +24,7 @@ MG996 没有载荷反馈，完成指令序列不能证明货架已离地或成�
 - [逐项实车验收及提交清单](docs/COURSE_ACCEPTANCE.md)
 - [机械方案、SolidWorks 建模约束](hardware/MECHANICAL_DESIGN.md)
 - [本次验证记录](docs/VALIDATION.md)
+- [可编辑设计汇报 PPT（10页，实车结果待补）](presentation/DASE7503_Project_Design_20260921.pptx)
 - [四个上游的来源与许可](docs/UPSTREAM_INTEGRATION.md)
 
 ## 软件检查
@@ -47,4 +48,4 @@ CI 不连接实车，不能证明实际完成三分钟比赛。旧 Humble/Gazebo
 不是本届部署入口。当前入口为 `real_bringup.launch.py` 和 `course.launch.py`。
 
 老师要求的完整最终交付还包括实际装配测试、SolidWorks Pack-and-Go、PowerPoint、
-六类二维码真实截图及器材归还。仓库提供程序与实施/验收文档，不能替代这些实物证据。
+六类二维码真实截图及器材归还。仓库提供程序、设计阶段PPT与实施/验收文档，不能替代这些实物证据。
