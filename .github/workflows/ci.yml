@@ -8,9 +8,9 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     container:
-      image: osrf/ros:humble-desktop
+      image: osrf/ros:jazzy-desktop
 
     steps:
       - name: Checkout
@@ -20,24 +20,25 @@ jobs:
         run: |
           apt-get update
           rosdep update
-          rosdep install --from-paths src --ignore-src -r -y \
-            --skip-keys "gazebo gazebo_ros gazebo_plugins"
+          rosdep install --from-paths src --ignore-src -y --rosdistro jazzy \
+            --skip-keys "micro_ros_agent"
 
       - name: Build
         run: |
-          . /opt/ros/humble/setup.sh
+          . /opt/ros/jazzy/setup.sh
           colcon build --symlink-install \
             --cmake-args -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
 
       - name: Test
         run: |
-          . /opt/ros/humble/setup.sh
+          . /opt/ros/jazzy/setup.sh
           . install/setup.sh
           colcon test --return-code-on-test-failure
 
       - name: QR mission schema test
         run: |
           python3 src/mecanum_task_manager/test/test_qr_payload.py
+          python3 src/mecanum_task_manager/test/test_course_game.py
 
       - name: Python syntax check
         run: |
@@ -56,3 +57,18 @@ jobs:
         run: python3 firmware/esp32/host_test/test_hardware_profile.py
       - name: Build control core without ESP-IDF
         run: make firmware-host-test
+
+  esp32s3-firmware-build:
+    runs-on: ubuntu-24.04
+    container:
+      image: espressif/idf:v5.4.2
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build actual ESP32-S3 firmware with Jazzy micro-ROS
+        shell: bash
+        run: |
+          . /opt/esp/idf/export.sh
+          pip install catkin_pkg colcon-common-extensions lark empy==3.3.4
+          cd firmware/esp32
+          idf.py set-target esp32s3
+          idf.py build

@@ -23,7 +23,7 @@ class HardwareSupervisor(Node):
 
     def __init__(self) -> None:
         super().__init__("hardware_supervisor")
-        self.declare_parameter("command_ack_timeout_sec", 2.0)
+        self.declare_parameter("command_ack_timeout_sec", 4.0)
         self.declare_parameter("wheel_odom_topic", "/wheel/odom")
         self.declare_parameter("odom_topic", "/odom")
         self.declare_parameter("odom_frame", "odom")
@@ -42,6 +42,13 @@ class HardwareSupervisor(Node):
         self._condition = threading.Condition()
         self._base_enabled: bool | None = None
         self._lift_state: int | None = None
+        self._base_sequence = 0
+        self._lift_sequence = 0
+        self._base_seen = float('-inf')
+        self._odom_seen = float('-inf')
+        self._stationary_since = None
+        self._stop_generation = 0
+        self._operation_lock = threading.Lock()
         self._callbacks = ReentrantCallbackGroup()
 
         self._enable_pub = self.create_publisher(Bool, "/base/enable", 10)
@@ -106,6 +113,8 @@ class HardwareSupervisor(Node):
     def _enabled_callback(self, message: Bool) -> None:
         with self._condition:
             self._base_enabled = bool(message.data)
+            self._base_sequence += 1
+            self._base_seen = time.monotonic()
             self._condition.notify_all()
 
     def _lift_state_callback(self, message: Int32) -> None:
@@ -114,6 +123,7 @@ class HardwareSupervisor(Node):
             return
         with self._condition:
             self._lift_state = int(message.data)
+            self._lift_sequence += 1
             self._condition.notify_all()
 
     @staticmethod
@@ -147,6 +157,18 @@ class HardwareSupervisor(Node):
             self.get_logger().error("rejected wheel odometry with invalid quaternion")
             return
 
+        with self._condition:
+            now = time.monotonic()
+            velocity = message.twist.twist
+            stationary = (abs(velocity.linear.x) < 0.01 and abs(velocity.linear.y) < 0.01
+                          and abs(velocity.angular.z) < 0.03)
+            if not stationary or now - self._odom_seen > 0.5:
+                self._stationary_since = None
+            if stationary and self._stationary_since is None:
+                self._stationary_since = now
+            self._odom_seen = now
+            self._condition.notify_all()
+
         message.header.frame_id = self._odom_frame
         message.child_frame_id = self._base_frame
         self._odom_pub.publish(message)
@@ -168,10 +190,14 @@ class HardwareSupervisor(Node):
 
     def _request_enable(self, requested: bool) -> tuple[bool, str]:
         deadline = time.monotonic() + self._ack_timeout
+        sequence = self._base_sequence
+        generation = self._stop_generation
         while rclpy.ok() and time.monotonic() < deadline:
+            if requested and generation != self._stop_generation:
+                return False, "enable preempted by stop"
             self._publish_enable(requested)
             with self._condition:
-                if self._base_enabled is requested:
+                if self._base_enabled is requested and self._base_sequence > sequence:
                     state = "enabled" if requested else "disabled"
                     return True, f"base firmware acknowledged {state}"
                 self._condition.wait(timeout=0.1)
@@ -179,12 +205,23 @@ class HardwareSupervisor(Node):
 
     def _request_lift(self, requested: int) -> tuple[bool, str]:
         deadline = time.monotonic() + self._ack_timeout
+        sequence = self._lift_sequence
+        generation = self._stop_generation
         while rclpy.ok() and time.monotonic() < deadline:
+            now = time.monotonic()
+            if (generation != self._stop_generation or not self._base_enabled
+                    or now - self._base_seen > 0.5):
+                return False, "lift requires fresh enabled base; stop preempts lift"
+            if (now - self._odom_seen > 0.5 or self._stationary_since is None
+                    or now - self._stationary_since < 0.3):
+                with self._condition:
+                    self._condition.wait(timeout=0.05)
+                continue
             message = Int32()
             message.data = requested
             self._lift_pub.publish(message)
             with self._condition:
-                if self._lift_state == requested:
+                if self._lift_state == requested and self._lift_sequence > sequence:
                     label = "raised" if requested else "lowered"
                     return True, (
                         f"lift command acknowledged as {label}; "
@@ -194,19 +231,34 @@ class HardwareSupervisor(Node):
         return False, "no matching /lift/state acknowledgement"
 
     def _enable_service(self, _request, response):
-        response.success, response.message = self._request_enable(True)
+        if not self._operation_lock.acquire(blocking=False):
+            response.success, response.message = False, "another actuator request is active"
+            return response
+        try:
+            response.success, response.message = self._request_enable(True)
+        finally:
+            self._operation_lock.release()
         return response
 
     def _stop_service(self, _request, response):
+        self._stop_generation += 1
         response.success, response.message = self._request_enable(False)
         return response
 
     def _lift_up_service(self, _request, response):
-        response.success, response.message = self._request_lift(1)
-        return response
+        return self._lift_service(1, response)
 
     def _lift_down_service(self, _request, response):
-        response.success, response.message = self._request_lift(0)
+        return self._lift_service(0, response)
+
+    def _lift_service(self, requested, response):
+        if not self._operation_lock.acquire(blocking=False):
+            response.success, response.message = False, "another actuator request is active"
+            return response
+        try:
+            response.success, response.message = self._request_lift(requested)
+        finally:
+            self._operation_lock.release()
         return response
 
     def destroy_node(self):

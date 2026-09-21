@@ -1,0 +1,32 @@
+# Teaching diagram estimates only. Map frame: lower-left of landscape drawing,
+# +x toward START (3020 mm), +y upward (2000 mm). Align the SLAM map to this
+# frame or replace ALL poses. These are ROBOT poses, not rack centres.
+# Set true only after the tests in docs/COURSE_ACCEPTANCE.md pass.
+calibrated: false
+measured_robot_size_m: [0.0, 0.0, 0.0]
+# Enter your team's actual four codes; the appendix codes are only samples.
+rack_codes: {}
+rack_order: [RACKB, RACKA, RACKC, RACKD]
+stations:
+  START: {x: 2.65, y: 1.0, yaw: 3.141593}
+  END_SCAN: {x: 0.95, y: 1.0, yaw: 3.141593}
+  RACKA_APPROACH: {x: 1.50, y: 1.48, yaw: 3.141593}
+  RACKA_DOCK: {x: 1.125, y: 1.48, yaw: 3.141593}
+  RACKA_EXIT: {x: 1.50, y: 1.48, yaw: 3.141593}
+  RACKB_APPROACH: {x: 2.10, y: 0.62, yaw: 3.141593}
+  RACKB_DOCK: {x: 1.825, y: 0.62, yaw: 3.141593}
+  RACKB_EXIT: {x: 2.10, y: 0.62, yaw: 3.141593}
+  RACKC_APPROACH: {x: 2.30, y: 0.32, yaw: 3.141593}
+  RACKC_DOCK: {x: 1.325, y: 0.32, yaw: 3.141593}
+  RACKC_EXIT: {x: 2.30, y: 0.32, yaw: 3.141593}
+  RACKD_APPROACH: {x: 2.30, y: 1.60, yaw: 3.141593}
+  RACKD_DOCK: {x: 1.925, y: 1.60, yaw: 3.141593}
+  RACKD_EXIT: {x: 2.30, y: 1.60, yaw: 3.141593}
+  DROP1_POSE: {x: 0.38, y: 0.50, yaw: 3.141593}
+  DROP1_EXIT: {x: 0.95, y: 0.50, yaw: 3.141593}
+  DROP2_POSE: {x: 0.38, y: 1.50, yaw: 3.141593}
+  DROP2_EXIT: {x: 0.95, y: 1.50, yaw: 3.141593}
+  DROP3_POSE: {x: 0.38, y: 0.85, yaw: 3.141593}
+  DROP3_EXIT: {x: 0.95, y: 0.85, yaw: 3.141593}
+  DROP4_POSE: {x: 0.38, y: 1.18, yaw: 3.141593}
+  DROP4_EXIT: {x: 0.95, y: 1.18, yaw: 3.141593}

@@ -17,13 +17,19 @@ install(
     mecanum_task_manager/patrol_manager.py
     mecanum_task_manager/simple_patrol.py
     mecanum_task_manager/mission_manager.py
+    mecanum_task_manager/course_mission_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(
   FILES
     mecanum_task_manager/qr_payload.py
+    mecanum_task_manager/course_game.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(course_game test/test_course_game.py)
+endif()
 ament_package()

@@ -11,6 +11,9 @@ from std_msgs.msg import String
 from cv_bridge import CvBridge
 import cv2
 import time
+import json
+from pathlib import Path
+from course_game import parse_course_qr
 
 
 class QRReader(Node):
@@ -23,6 +26,11 @@ class QRReader(Node):
         self.declare_parameter('dedupe_seconds', 2.0)
         self.declare_parameter('max_payload_bytes', 512)
         self.declare_parameter('sample_every_n_frames', 2)
+        self.declare_parameter('evidence_dir', 'evidence')
+        self.evidence_dir = Path(self.get_parameter('evidence_dir').value)
+        self.evidence_dir.mkdir(parents=True, exist_ok=True)
+        self.evidence_saved = set()
+        self._log = (self.evidence_dir / f'qr-{time.time_ns()}.jsonl').open('x', encoding='utf-8')
 
         self.bridge = CvBridge()
         self.detector = cv2.QRCodeDetector()
@@ -63,12 +71,19 @@ class QRReader(Node):
         try:
             found, decoded, _, _ = self.detector.detectAndDecodeMulti(frame)
             payloads = decoded if found else ()
+            if not payloads:
+                data, _, _ = self.detector.detectAndDecode(frame)
+                payloads = (data,) if data else ()
         except cv2.error:
             data, _, _ = self.detector.detectAndDecode(frame)
             payloads = (data,) if data else ()
 
         now = time.monotonic()
         for data in payloads:
+            try:
+                parse_course_qr(data)
+            except ValueError:
+                continue
             if not data or len(data.encode('utf-8')) > self.max_payload_bytes:
                 continue
             if any(ord(character) < 32 for character in data):
@@ -76,6 +91,23 @@ class QRReader(Node):
                 continue
             last_time = self.last_seen.get(data, float('-inf'))
             if now - last_time < self.dedupe_seconds:
+                continue
+            # Persist genuine camera evidence before the control stack sees it.
+            # Save one annotated image per distinct official code, plus every decode.
+            try:
+                if data not in self.evidence_saved:
+                    path = self.evidence_dir / f'{time.time_ns()}-{data}.png'
+                    annotated = frame.copy()
+                    cv2.putText(annotated, data, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
+                                0.8, (0, 255, 0), 2)
+                    if not cv2.imwrite(str(path), annotated):
+                        raise OSError('failed to save camera frame')
+                    self.evidence_saved.add(data)
+                self._log.write(json.dumps({'decoded': data, 'wall_time_ns': time.time_ns(),
+                    'image_stamp': [msg.header.stamp.sec, msg.header.stamp.nanosec]}) + '\n')
+                self._log.flush()
+            except OSError as exc:
+                self.get_logger().error(f'QR evidence write failed: {exc}')
                 continue
             self.last_seen[data] = now
             self.last_seen = {
@@ -86,7 +118,11 @@ class QRReader(Node):
             str_msg = String()
             str_msg.data = data
             self.qr_pub.publish(str_msg)
-            self.get_logger().info('published a bounded QR mission payload')
+            self.get_logger().info(f'Decoded QR: {data}')
+
+    def destroy_node(self):
+        self._log.close()
+        return super().destroy_node()
 
 
 def main(args=None):

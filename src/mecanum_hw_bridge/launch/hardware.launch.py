@@ -14,17 +14,17 @@ def generate_launch_description():
     package_dir = get_package_share_directory("mecanum_hw_bridge")
     config = os.path.join(package_dir, "config", "hardware.yaml")
     launch_agent = LaunchConfiguration("launch_agent")
-    agent_port = LaunchConfiguration("agent_port")
+    serial_device = LaunchConfiguration("serial_device")
 
     return LaunchDescription([
         DeclareLaunchArgument("launch_agent", default_value="true"),
-        DeclareLaunchArgument("agent_port", default_value="8090"),
+        DeclareLaunchArgument("serial_device", default_value="/dev/microros"),
         DeclareLaunchArgument("config_file", default_value=config),
         Node(
             package="micro_ros_agent",
             executable="micro_ros_agent",
             name="micro_ros_agent",
-            arguments=["udp4", "--port", agent_port],
+            arguments=["serial", "--dev", serial_device, "-b", "115200"],
             output="screen",
             condition=IfCondition(launch_agent),
         ),

@@ -28,8 +28,7 @@ def generate_launch_description():
     launch_task_manager = LaunchConfiguration('launch_task_manager')
     slam_mode = LaunchConfiguration('slam_mode')
     map_yaml = LaunchConfiguration('map_yaml')
-    stations_yaml = LaunchConfiguration('stations_yaml')
-    allow_pose_only_docking = LaunchConfiguration('allow_pose_only_docking')
+    course_yaml = LaunchConfiguration('course_yaml')
 
     robot_description = ParameterValue(
         Command([
@@ -43,7 +42,8 @@ def generate_launch_description():
         PythonLaunchDescriptionSource(
             os.path.join(hardware_dir, 'launch', 'hardware.launch.py')
         ),
-        launch_arguments={'launch_agent': launch_agent}.items(),
+        launch_arguments={'launch_agent': launch_agent,
+                          'serial_device': LaunchConfiguration('serial_device')}.items(),
     )
     sensors = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -68,18 +68,20 @@ def generate_launch_description():
     )
     tasks = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(task_dir, 'launch', 'task_manager.launch.py')
+            os.path.join(task_dir, 'launch', 'course.launch.py')
         ),
         launch_arguments={
             'use_sim_time': 'false',
-            'stations_yaml': stations_yaml,
-            'allow_pose_only_docking': allow_pose_only_docking,
+            'course_yaml': course_yaml,
+            'evidence_dir': LaunchConfiguration('evidence_dir'),
         }.items(),
         condition=IfCondition(launch_task_manager),
     )
 
     return LaunchDescription([
         DeclareLaunchArgument('launch_agent', default_value='true'),
+        DeclareLaunchArgument('serial_device', default_value='/dev/microros'),
+        DeclareLaunchArgument('evidence_dir', default_value='evidence'),
         DeclareLaunchArgument('launch_sensors', default_value='true'),
         DeclareLaunchArgument('launch_lidar', default_value='true'),
         DeclareLaunchArgument('launch_camera', default_value='true'),
@@ -88,16 +90,8 @@ def generate_launch_description():
         DeclareLaunchArgument('slam_mode', default_value='true'),
         DeclareLaunchArgument('map_yaml', default_value=''),
         DeclareLaunchArgument(
-            'stations_yaml',
-            default_value=os.path.join(task_dir, 'config', 'stations.yaml'),
-        ),
-        DeclareLaunchArgument(
-            'allow_pose_only_docking',
-            default_value='false',
-            description=(
-                'Allow real missions without a docking/contact sensor only after '
-                'station and lift calibration'
-            ),
+            'course_yaml',
+            default_value=os.path.join(task_dir, 'config', 'course.yaml'),
         ),
         Node(
             package='robot_state_publisher',

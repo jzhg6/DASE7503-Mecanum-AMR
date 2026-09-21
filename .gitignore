@@ -33,6 +33,8 @@ Thumbs.db
 # Local / env
 .env
 .env.local
+evidence/
+external_ws/
 *.local
 
 # Firmware and local validation outputs

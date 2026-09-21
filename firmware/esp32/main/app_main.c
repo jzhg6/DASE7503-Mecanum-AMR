@@ -19,7 +19,8 @@
 #include "rmw_microros/rmw_microros.h"
 #include "std_msgs/msg/bool.h"
 #include "std_msgs/msg/int32.h"
-#include "uros_network_interfaces.h"
+#include "serial_transport.h"
+#include "esp_system.h"
 
 static const char *TAG = "mecanum_base";
 static portMUX_TYPE state_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -32,6 +33,9 @@ static float odom_yaw;
 static int64_t last_command_us;
 static bool base_enabled;
 static int32_t lift_state = -1;
+static int32_t lift_requested = -1;
+static int64_t lift_ready_us;
+static rcl_allocator_t allocator;
 
 static rcl_publisher_t odom_publisher;
 static rcl_publisher_t enabled_publisher;
@@ -45,7 +49,7 @@ static void stop_and_disarm(void) {
   base_enabled = false;
   target_wheels = (wheel_speeds_t){0};
   portEXIT_CRITICAL(&state_lock);
-  board_stop_all_motors(true);
+  /* Motor PWM has one owner: control_task applies this within one period. */
 }
 
 static void command_callback(const void *input) {
@@ -84,16 +88,26 @@ static void enable_callback(const void *input) {
 static void lift_callback(const void *input) {
   const std_msgs__msg__Int32 *message = input;
   if (message->data != 0 && message->data != 1) return;
+  portENTER_CRITICAL(&state_lock);
+  bool allowed = base_enabled && fabsf(measured_body.vx) < 0.01f &&
+      fabsf(measured_body.vy) < 0.01f && fabsf(measured_body.wz) < 0.03f &&
+      target_wheels.fl == 0 && target_wheels.fr == 0 &&
+      target_wheels.rl == 0 && target_wheels.rr == 0;
+  bool duplicate = lift_requested == message->data;
+  portEXIT_CRITICAL(&state_lock);
+  if (!allowed || duplicate) return;
   if (board_set_lift(message->data == 1)) {
     portENTER_CRITICAL(&state_lock);
-    lift_state = message->data;
+    lift_requested = message->data;
+    lift_state = -1;
+    lift_ready_us = esp_timer_get_time() + LIFT_SETTLE_MS * 1000LL;
     portEXIT_CRITICAL(&state_lock);
   }
 }
 
 static void control_task(void *argument) {
   (void)argument;
-  const float dt = MOTOR_CONTROL_PERIOD_MS / 1000.0f;
+  int64_t previous_us = esp_timer_get_time();
   wheel_pid_t pid[4];
   for (unsigned int index = 0; index < 4; ++index) {
     pid[index] = (wheel_pid_t){
@@ -105,6 +119,10 @@ static void control_task(void *argument) {
   }
   TickType_t wake = xTaskGetTickCount();
   while (true) {
+    int64_t sample_us = esp_timer_get_time();
+    float dt = (sample_us - previous_us) / 1000000.0f;
+    if (dt <= 0) dt = MOTOR_CONTROL_PERIOD_MS / 1000.0f;
+    previous_us = sample_us;
     const wheel_speeds_t sample = {
         .fl = encoder_delta_to_speed(board_take_encoder_delta(0),
                                      WHEEL_CIRCUMFERENCE_M,
@@ -129,7 +147,9 @@ static void control_task(void *argument) {
     if (base_enabled && now - last_command_us > COMMAND_WATCHDOG_MS * 1000LL) {
       target_wheels = (wheel_speeds_t){0};
     }
-    enabled = base_enabled;
+    if (lift_requested >= 0 && now >= lift_ready_us) lift_state = lift_requested;
+    enabled = base_enabled && now >= lift_ready_us &&
+              now - last_command_us <= COMMAND_WATCHDOG_MS * 1000LL;
     requested = target_wheels;
     measured_body = body;
     const float cosine = cosf(odom_yaw);
@@ -143,7 +163,8 @@ static void control_task(void *argument) {
                               requested.rr};
     const float measured[4] = {sample.fl, sample.fr, sample.rl, sample.rr};
     for (unsigned int index = 0; index < 4; ++index) {
-      if (!enabled) {
+      if (!enabled || (requested.fl == 0 && requested.fr == 0 &&
+                       requested.rl == 0 && requested.rr == 0)) {
         wheel_pid_reset(&pid[index]);
         board_set_motor_duty(index, 0.0f);
       } else {
@@ -198,8 +219,14 @@ static bool create_ros_entities(rclc_support_t *support, rcl_node_t *node,
                                 geometry_msgs__msg__Twist *command_message,
                                 std_msgs__msg__Bool *enable_command,
                                 std_msgs__msg__Int32 *lift_command) {
-  rcl_allocator_t allocator = rcl_get_default_allocator();
-  if (rclc_support_init(support, 0, NULL, &allocator) != RCL_RET_OK) return false;
+  allocator = rcl_get_default_allocator();
+  rcl_init_options_t options = rcl_get_zero_initialized_init_options();
+  if (rcl_init_options_init(&options, allocator) != RCL_RET_OK) return false;
+  if (rcl_init_options_set_domain_id(&options, MICROROS_DOMAIN_ID) != RCL_RET_OK)
+    return false;
+  rcl_ret_t init_result = rclc_support_init_with_options(support, 0, NULL, &options, &allocator);
+  rcl_init_options_fini(&options);
+  if (init_result != RCL_RET_OK) return false;
   if (rclc_node_init_default(node, "mecanum_base", "", support) != RCL_RET_OK)
     return false;
   if (rclc_publisher_init_default(
@@ -232,8 +259,8 @@ static bool create_ros_entities(rclc_support_t *support, rcl_node_t *node,
           ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Int32),
           "/lift/command") != RCL_RET_OK)
     return false;
-  if (rclc_timer_init_default(timer, support, RCL_MS_TO_NS(50),
-                              fill_and_publish_state) !=
+  if (rclc_timer_init_default2(timer, support, RCL_MS_TO_NS(50),
+                              fill_and_publish_state, true) !=
       RCL_RET_OK)
     return false;
   if (rclc_executor_init(executor, &support->context, 4, &allocator) != RCL_RET_OK)
@@ -269,9 +296,9 @@ static void micro_ros_task(void *argument) {
     rcl_subscription_t lift_subscription =
         rcl_get_zero_initialized_subscription();
     rclc_executor_t executor = rclc_executor_get_zero_initialized_executor();
-    geometry_msgs__msg__Twist command_message;
-    std_msgs__msg__Bool enable_command;
-    std_msgs__msg__Int32 lift_command;
+    geometry_msgs__msg__Twist command_message = {0};
+    std_msgs__msg__Bool enable_command = {0};
+    std_msgs__msg__Int32 lift_command = {0};
 
     if (!create_ros_entities(&support, &node, &timer, &command_subscription,
                              &enable_subscription, &lift_subscription, &executor,
@@ -279,9 +306,13 @@ static void micro_ros_task(void *argument) {
       ESP_LOGE(TAG, "failed to create ROS entities");
       stop_and_disarm();
       vTaskDelay(pdMS_TO_TICKS(1000));
-      continue;
+      esp_restart(); /* Reclaim partial ROS allocations; restart disarmed. */
     }
-    rmw_uros_sync_session(1000);
+    if (rmw_uros_sync_session(1000) != RMW_RET_OK) {
+      stop_and_disarm();
+      vTaskDelay(pdMS_TO_TICKS(20));
+      esp_restart();
+    }
     ESP_LOGI(TAG, "micro-ROS connected");
     int ping_divider = 0;
     while (true) {
@@ -327,7 +358,7 @@ void app_main(void) {
   odom_message.twist.covariance[28] = 1000000.0;
   odom_message.twist.covariance[35] = 0.02;
 
-  ESP_ERROR_CHECK(uros_network_interface_initialize());
+  course_serial_transport_init();
   xTaskCreatePinnedToCore(control_task, "wheel_control", 6144, NULL, 12, NULL, 1);
   xTaskCreate(micro_ros_task, "micro_ros", 16384, NULL, 10, NULL);
 }

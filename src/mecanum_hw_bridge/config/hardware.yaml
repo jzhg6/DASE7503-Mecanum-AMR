@@ -1,6 +1,6 @@
 hardware_supervisor:
   ros__parameters:
-    command_ack_timeout_sec: 2.0
+    command_ack_timeout_sec: 4.0
     wheel_odom_topic: /wheel/odom
     odom_topic: /odom
     odom_frame: odom

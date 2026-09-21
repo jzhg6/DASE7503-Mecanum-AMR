@@ -1,30 +1,26 @@
-FROM osrf/ros:humble-desktop-full
+FROM osrf/ros:jazzy-desktop
 
 # Gerekli sistem bağımlılıkları
 RUN apt-get update && apt-get install -y \
     python3-pip \
     python3-opencv \
-    ros-humble-nav2-bringup \
-    ros-humble-slam-toolbox \
-    ros-humble-gazebo-ros-pkgs \
-    ros-humble-gazebo-plugins \
-    ros-humble-cv-bridge \
-    ros-humble-joint-state-publisher \
-    ros-humble-robot-state-publisher \
-    ros-humble-xacro \
+    ros-jazzy-nav2-bringup \
+    ros-jazzy-slam-toolbox \
+    ros-jazzy-cv-bridge \
+    ros-jazzy-joint-state-publisher \
+    ros-jazzy-robot-state-publisher \
+    ros-jazzy-xacro \
     && rm -rf /var/lib/apt/lists/*
 
 # Python bağımlılıkları
-RUN pip3 install \
-    opencv-python \
-    pyzbar
+# Use the system OpenCV and numpy shared by cv_bridge.
 
 # Workspace oluştur
 WORKDIR /ros2_ws
 COPY src/ src/
 
 # Build
-RUN . /opt/ros/humble/setup.sh && \
+RUN . /opt/ros/jazzy/setup.sh && \
     colcon build --symlink-install
 
 # Entrypoint

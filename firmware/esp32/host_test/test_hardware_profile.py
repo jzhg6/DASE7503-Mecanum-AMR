@@ -21,7 +21,7 @@ def main() -> None:
     expected = {
         "MOTOR_OUTPUT_COMPILED_IN": "0",
         "LIFT_OUTPUT_COMPILED_IN": "0",
-        "WHEEL_CIRCUMFERENCE_M": "0.1508f",
+        "WHEEL_CIRCUMFERENCE_M": "0.20420352f",
         "ENCODER_COUNTS_PER_REVOLUTION": "1040.0f",
         "MOTOR_FL_IN_A": "4",
         "MOTOR_FL_IN_B": "5",
@@ -31,8 +31,9 @@ def main() -> None:
         "MOTOR_RL_IN_B": "10",
         "MOTOR_RR_IN_A": "13",
         "MOTOR_RR_IN_B": "14",
-        "SERVO_LEFT_GPIO": "8",
-        "SERVO_RIGHT_GPIO": "21",
+        "LIFT_SERVO_GPIO": "8",
+        "MICROROS_UART_TX_GPIO": "43",
+        "MICROROS_UART_RX_GPIO": "44",
     }
     for name, value in expected.items():
         actual = macro(text, name)

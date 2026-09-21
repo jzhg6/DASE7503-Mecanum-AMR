@@ -8,15 +8,15 @@
   <xacro:property name="base_height" value="0.04"/>
   <xacro:property name="base_mass"   value="3.0"/>
 
-  <!-- 150.8 mm measured circumference gives a 24.0 mm nominal radius. -->
-  <xacro:property name="wheel_radius" value="0.0240006"/>
+  <!-- Teacher materials specify 65 mm wheels; loaded rolling radius needs calibration. -->
+  <xacro:property name="wheel_radius" value="0.0325"/>
   <xacro:property name="wheel_width"  value="0.04"/>
   <xacro:property name="wheel_mass"   value="0.15"/>
 
   <xacro:property name="wheel_x_offset" value="0.0475"/>
   <xacro:property name="wheel_y_offset" value="0.0675"/>
   <xacro:property name="wheel_z_offset" value="0.0"/>
-  <xacro:property name="lidar_z_offset" value="0.156"/>
+  <xacro:property name="lidar_z_offset" value="0.105"/>
 
   <!-- ==================== Macros ==================== -->
   <xacro:macro name="box_inertia" params="m w h d">

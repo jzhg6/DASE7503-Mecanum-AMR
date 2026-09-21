@@ -25,7 +25,8 @@ static const int encoder_direction[4] = {
     ENCODER_RR_DIRECTION};
 
 static pcnt_unit_handle_t encoder_units[4];
-static mcpwm_cmpr_handle_t servo_comparators[2];
+static mcpwm_cmpr_handle_t servo_comparators[1];
+static int previous_counts[4];
 
 static uint32_t duty_ticks(float duty) {
   const float bounded = fminf(fmaxf(fabsf(duty), 0.0f), 1.0f);
@@ -63,8 +64,11 @@ static void configure_encoders(void) {
     const pcnt_unit_config_t unit_config = {
         .low_limit = -32767,
         .high_limit = 32767,
+        .flags.accum_count = true,
     };
     ESP_ERROR_CHECK(pcnt_new_unit(&unit_config, &encoder_units[index]));
+    ESP_ERROR_CHECK(pcnt_unit_add_watch_point(encoder_units[index], -32767));
+    ESP_ERROR_CHECK(pcnt_unit_add_watch_point(encoder_units[index], 32767));
 
     pcnt_channel_handle_t channel_a = NULL;
     pcnt_channel_handle_t channel_b = NULL;
@@ -126,13 +130,15 @@ static void configure_servos(void) {
   ESP_ERROR_CHECK(mcpwm_new_operator(&operator_config, &oper));
   ESP_ERROR_CHECK(mcpwm_operator_connect_timer(oper, timer));
 
-  const int servo_pins[2] = {SERVO_LEFT_GPIO, SERVO_RIGHT_GPIO};
-  for (unsigned int index = 0; index < 2; ++index) {
+  const int servo_pins[1] = {LIFT_SERVO_GPIO};
+  for (unsigned int index = 0; index < 1; ++index) {
     const mcpwm_comparator_config_t comparator_config = {
         .flags.update_cmp_on_tez = true,
     };
     ESP_ERROR_CHECK(mcpwm_new_comparator(
         oper, &comparator_config, &servo_comparators[index]));
+    ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(
+        servo_comparators[index], servo_pulse_for_angle(LIFT_LOWER_DEG)));
     mcpwm_gen_handle_t generator = NULL;
     const mcpwm_generator_config_t generator_config = {
         .gen_gpio_num = servo_pins[index],
@@ -155,7 +161,7 @@ static void configure_servos(void) {
 void board_io_init(void) {
   configure_motor_pwm();
   configure_encoders();
-  configure_servos();
+  if (LIFT_OUTPUT_COMPILED_IN) configure_servos();
   board_stop_all_motors(true);
   if (!MOTOR_OUTPUT_COMPILED_IN) {
     ESP_LOGW(TAG, "motor output compile gate is OFF");
@@ -173,6 +179,11 @@ void board_set_motor_duty(unsigned int index, float signed_duty) {
   const uint32_t reverse = signed_duty < 0.0f ? duty_ticks(signed_duty) : 0;
   const ledc_channel_t channel_a = (ledc_channel_t)(index * 2);
   const ledc_channel_t channel_b = (ledc_channel_t)(index * 2 + 1);
+  /* Clear both legs before changing direction. */
+  ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, channel_a, 0));
+  ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, channel_a));
+  ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, channel_b, 0));
+  ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, channel_b));
   ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, channel_a, forward));
   ESP_ERROR_CHECK(ledc_update_duty(LEDC_LOW_SPEED_MODE, channel_a));
   ESP_ERROR_CHECK(ledc_set_duty(LEDC_LOW_SPEED_MODE, channel_b, reverse));
@@ -193,17 +204,15 @@ int board_take_encoder_delta(unsigned int index) {
   if (index >= 4 || encoder_units[index] == NULL) return 0;
   int count = 0;
   ESP_ERROR_CHECK(pcnt_unit_get_count(encoder_units[index], &count));
-  ESP_ERROR_CHECK(pcnt_unit_clear_count(encoder_units[index]));
-  return count * encoder_direction[index];
+  const int delta = count - previous_counts[index];
+  previous_counts[index] = count;
+  return delta * encoder_direction[index];
 }
 
 bool board_set_lift(bool raised) {
   if (!LIFT_OUTPUT_COMPILED_IN) return false;
-  const int left = raised ? LIFT_RAISE_LEFT_DEG : LIFT_LOWER_LEFT_DEG;
-  const int right = raised ? LIFT_RAISE_RIGHT_DEG : LIFT_LOWER_RIGHT_DEG;
+  const int angle = raised ? LIFT_RAISE_DEG : LIFT_LOWER_DEG;
   ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(
-      servo_comparators[0], servo_pulse_for_angle(left)));
-  ESP_ERROR_CHECK(mcpwm_comparator_set_compare_value(
-      servo_comparators[1], servo_pulse_for_angle(right)));
+      servo_comparators[0], servo_pulse_for_angle(angle)));
   return true;
 }
