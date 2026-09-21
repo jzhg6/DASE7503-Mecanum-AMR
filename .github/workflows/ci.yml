@@ -72,3 +72,12 @@ jobs:
           cd firmware/esp32
           idf.py set-target esp32s3
           idf.py build
+      - name: Save output-disabled firmware build
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32s3-output-disabled
+          path: |
+            firmware/esp32/build/*.bin
+            firmware/esp32/build/bootloader/bootloader.bin
+            firmware/esp32/build/partition_table/partition-table.bin
+            firmware/esp32/build/flasher_args.json

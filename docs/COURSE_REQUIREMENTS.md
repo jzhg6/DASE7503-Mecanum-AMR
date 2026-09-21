@@ -9,7 +9,7 @@ P3=`3. Group Projects Materials.pdf`，P4=`4. DASE7503_Appendix.Samples of QR co
 | 要求/来源 | 原仓库冲突 | 本次处理与剩余证据 |
 |---|---|---|
 | Pi 使用 ROS2 Jazzy（P1 p1-2） | Humble/Ubuntu22.04 | Jazzy/Ubuntu24.04；CI、Docker、Nav2 插件配置迁移 |
-| ESP32 micro-ROS，USB 串口与 Pi 通信（P1 p2、P3 p2/14） | Wi-Fi UDP8090 | UART0 GPIO43/44、115200、Domain20；Agent serial；需真线测试 |
+| ESP32 micro-ROS，USB 串口与 Pi 通信（P1 p2、P3 p2/14） | Wi-Fi UDP8090 | UART0 GPIO43/44、460800、Domain20；Agent serial；需真线测试 |
 | 65 mm 左右麦轮各2（P3 p6-7） | 周长150.8mm，直径约48mm | 半径32.5mm，周长204.20352mm；实车滚动半径仍需标定 |
 | 310 编码电机4个，PPR13、减速比20（P3 p7） | 1040被直接当成学长事实 | x4正交计数推导13×20×4=1040；手转一圈确认 |
 | MG996 180度1个（P3 p9） | 双舵机驱动 | 单路S1 GPIO8，GPIO21不驱动；连杆角度须实测 |

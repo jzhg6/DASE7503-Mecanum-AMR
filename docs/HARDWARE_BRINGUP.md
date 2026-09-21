@@ -70,7 +70,7 @@ launch参数；雷达端口在自己的hardware.yaml填写，使用udev持久命
 不要仅凭两个设备都具有同一USB芯片VID/PID就绑定。加入dialout组并重新登录。
 
 ```bash
-ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/serial/by-id/YOUR_ESP32 -b 115200
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/serial/by-id/YOUR_ESP32 -b 460800
 # 另一个已source的终端
 ros2 launch mecanum_bringup real_bringup.launch.py launch_agent:=false \
   launch_sensors:=false

@@ -12,6 +12,7 @@ from geometry_msgs.msg import PoseStamped, Twist
 from nav2_msgs.action import NavigateToPose
 from rclpy.action import ActionClient
 from rclpy.node import Node
+from rclpy.clock import Clock, ClockType
 from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 import yaml
@@ -51,8 +52,9 @@ class CourseMissionNode(Node):
         evidence = Path(self.get_parameter('evidence_dir').value)
         evidence.mkdir(parents=True, exist_ok=True)
         self._log = (evidence / f'game-{time.time_ns()}.jsonl').open('x', encoding='utf-8')
-        self.create_timer(0.05, self._tick)
-        self.create_timer(0.5, self._publish)
+        self._wall_clock = Clock(clock_type=ClockType.STEADY_TIME)
+        self.create_timer(0.05, self._tick, clock=self._wall_clock)
+        self.create_timer(0.5, self._publish, clock=self._wall_clock)
         self._publish()
 
     def _base(self, msg):

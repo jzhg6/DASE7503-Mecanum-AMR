@@ -35,7 +35,7 @@ static size_t serial_read(struct uxrCustomTransport *transport, uint8_t *buffer,
 }
 void course_serial_transport_init(void) {
   const uart_config_t config = {
-      .baud_rate = 115200, .data_bits = UART_DATA_8_BITS,
+      .baud_rate = MICROROS_UART_BAUD, .data_bits = UART_DATA_8_BITS,
       .parity = UART_PARITY_DISABLE, .stop_bits = UART_STOP_BITS_1,
       .flow_ctrl = UART_HW_FLOWCTRL_DISABLE, .source_clk = UART_SCLK_DEFAULT};
   ESP_ERROR_CHECK(uart_param_config(UART_NUM_0, &config));

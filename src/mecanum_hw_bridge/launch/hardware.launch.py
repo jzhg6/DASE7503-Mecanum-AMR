@@ -24,7 +24,7 @@ def generate_launch_description():
             package="micro_ros_agent",
             executable="micro_ros_agent",
             name="micro_ros_agent",
-            arguments=["serial", "--dev", serial_device, "-b", "115200"],
+            arguments=["serial", "--dev", serial_device, "-b", "460800"],
             output="screen",
             condition=IfCondition(launch_agent),
         ),

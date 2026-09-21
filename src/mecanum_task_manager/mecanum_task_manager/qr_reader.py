@@ -18,8 +18,8 @@ from course_game import parse_course_qr
 
 class QRReader(Node):
 
-    def __init__(self):
-        super().__init__('qr_reader')
+    def __init__(self, parameter_overrides=None):
+        super().__init__('qr_reader', parameter_overrides=parameter_overrides)
 
         self.declare_parameter('image_topic', '/camera/image_raw')
         self.declare_parameter('qr_data_topic', '/qr/data')

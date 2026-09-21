@@ -12,9 +12,12 @@ idf.py build
 idf.py -p /dev/ttyUSB0 flash
 ```
 
-先通过设备序列号确认端口。固件使用UART0 115200 8N1，TX43/RX44；Jazzy组件锁定git
+先通过设备序列号确认端口。固件使用UART0 460800 8N1，TX43/RX44；Jazzy组件锁定git
 commit，`sdkconfig.defaults`选择自定义UART传输并关闭该串口日志。不可同时打开串口
 monitor和Agent。Pi/PC都使用 `ROS_DOMAIN_ID=20`。
+
+460800波特为20Hz完整Odometry（含两组协方差）及控制反馈留出带宽；115200不足以
+持续承载这个消息频率。若设备只能用较低波特率，须同步降低遥测频率并验证往返延迟。
 
 | 方向 | 接口 | 含义 |
 |---|---|---|
