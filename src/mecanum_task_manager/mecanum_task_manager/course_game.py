@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: MIT
 """Deterministic course game rules; no ROS, wall clock or hardware dependencies."""
 from dataclasses import dataclass
-import itertools
 import math
 import re
 

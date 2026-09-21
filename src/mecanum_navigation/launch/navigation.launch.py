@@ -17,7 +17,7 @@ def generate_launch_description():
     slam_mode    = LaunchConfiguration('slam_mode',    default='true')   # false → AMCL localization
     map_yaml     = LaunchConfiguration('map_yaml',     default='')
 
-    nav2_params  = os.path.join(pkg_nav, 'config', 'nav2_params.yaml')
+    nav2_params = LaunchConfiguration('nav2_params')
     slam_params  = os.path.join(pkg_nav, 'config', 'slam_params.yaml')
 
     slam_launch = IncludeLaunchDescription(
@@ -45,7 +45,7 @@ def generate_launch_description():
 
     nav2_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
-            os.path.join(pkg_nav2, 'launch', 'navigation_launch.py')
+            os.path.join(pkg_nav, 'launch', 'course_nav_stack.launch.py')
         ),
         launch_arguments={
             'use_sim_time': use_sim_time,
@@ -54,6 +54,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        DeclareLaunchArgument('nav2_params', default_value=os.path.join(pkg_nav, 'config', 'nav2_params.yaml')),
         DeclareLaunchArgument('use_sim_time', default_value='true'),
         DeclareLaunchArgument('slam_mode',    default_value='true',
                               description='true=SLAM, false=AMCL localization'),

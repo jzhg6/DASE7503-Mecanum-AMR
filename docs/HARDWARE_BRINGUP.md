@@ -1,112 +1,133 @@
-# 实车联调手册
+# Ubuntu 24.04 / ROS 2 Jazzy 实车部署
 
-本仓库已经按同款课程硬件重构，但默认仍不能驱动电机或舵机：ESP32-S3
-配置中的两个编译期开关均为 `0`。GPIO、编码器分辨率和 MS200 参数来自同款
-硬件的公开资料，电机方向、舵机角度、有效轮径和机械尺寸必须在自己的实物上复核。
-
-## 1. 接电前
-
-- 将真实蘑菇急停串入电机驱动使能或电机电源；ROS 服务不能替代硬件急停。
-- 电机、舵机和树莓派分路供电并共逻辑地，按堵转电流配置保险丝和限流。
-- 用万用表核对 `hardware/HARDWARE_PROFILE.md` 的 GPIO 与板上接口。
-- 将小车架空，拆下舵机连杆；首次烧录时不要接电机动力电源。
-
-## 2. Linux 工具链与 micro-ROS
-
-当前软件基线是 Ubuntu 22.04 / ROS 2 Humble。ESP-IDF 与 micro-ROS 也必须
-使用兼容的 Humble 分支；不要同时运行 Jazzy Agent 和 Humble 固件。
+以下命令在Linux执行，Windows无需安装ROS、ESP-IDF或PlatformIO。
+本仓库使用Ubuntu24.04 arm64的Pi5与Jazzy；先按ROS官方安装说明安装Jazzy。
+本机开发目录在E盘；Linux路径自行选择。所有终端统一：
 
 ```bash
-# Raspberry Pi
-source /opt/ros/humble/setup.bash
-ros2 run micro_ros_agent micro_ros_agent udp4 --port 8090
-
-# ESP32 开发环境
-source ~/esp/esp-idf/export.sh
-cd firmware/esp32
-idf.py set-target esp32s3
-idf.py menuconfig
-idf.py build flash monitor
+source /opt/ros/jazzy/setup.bash
+export ROS_DOMAIN_ID=20
+cd /path/to/DASE7503-Mecanum-AMR
+export ROS_LOG_DIR="$PWD/log/ros"
+sudo apt install python3-colcon-common-extensions python3-rosdep python3-vcstool \
+  python3-opencv python3-yaml ros-jazzy-nav2-bringup ros-jazzy-slam-toolbox \
+  ros-jazzy-cv-bridge ros-jazzy-xacro
 ```
 
-Wi-Fi 名称、密码、Agent IP、端口和 Domain ID 通过 `idf.py menuconfig` 设置，
-不得提交到 Git。无动力状态下确认以下话题出现：
+## 1. 相机和雷达驱动
+
+老师器材文件p15要求 **libcamera和camera_ros均从源码构建**。
+参考 [camera_ros官方源码构建说明](https://github.com/christianrauch/camera_ros#build-instructions)，
+Ubuntu上的Camera3使用Raspberry Pi的libcamera fork。仓库 `hardware/camera.repos` 锁定
+本次审阅版本，不代表已经在你这块Pi上验证。
 
 ```bash
-ros2 topic list | grep -E 'wheel/odom|base/enabled|lift/state'
-ros2 topic hz /wheel/odom
+mkdir -p external_ws/camera/src
+vcs import external_ws/camera/src < hardware/camera.repos
+sudo apt install python3-colcon-meson
+cd external_ws/camera
+rosdep install --from-paths src --ignore-src -y --rosdistro jazzy --skip-keys libcamera
+colcon build --event-handlers console_direct+
+source install/setup.bash
+cd ../..
 ```
 
-## 3. 编码器与轮序
+如果meson报告缺系统库，按Raspberry Pi/libcamera官方README安装相应依赖，勿把系统
+libcamera二进制安装成功误认为已经满足老师的源码要求。
+MS200使用[亚博供应商ROS2驱动说明](https://www.yahboom.net/public/upload/upload-html/1701163653/1.Preparation.html)
+中的 `oradar_ros-dev-ros2` 软件包，单独工作区编译并source；预期包名 `oradar_lidar`、
+可执行 `oradar_scan`，`ros2 pkg executables oradar_lidar`核对。
+不从学长压缩包复制SDK。驱动未随本仓库vendoring，需要在Pi上安装并验证。
 
-保持 `MOTOR_OUTPUT_COMPILED_IN 0`，依次手转 FL、FR、RL、RR。只有对应轮速
-应改变；车轮朝“使车辆前进”的方向转动时，测得速度应为正。若符号错误，只改
-对应的 `ENCODER_*_DIRECTION`。标记轮胎并转动一整圈，确认约为 1040 count。
+## 2. Agent与主工作区
 
-## 4. 单轮闭环与失效停车
+在单独工作区从micro-ROS官方Jazzy setup生成Agent：
 
-确认物理急停有效后，将 `MOTOR_OUTPUT_COMPILED_IN` 改为 `1`，仍保持小车架空。
-启动真实硬件栈并显式使能：
+```bash
+mkdir -p external_ws/agent/src
+git clone -b jazzy https://github.com/micro-ROS/micro_ros_setup.git external_ws/agent/src/micro_ros_setup
+cd external_ws/agent
+rosdep install --from-paths src --ignore-src -y --rosdistro jazzy
+colcon build
+source install/setup.bash
+ros2 run micro_ros_setup create_agent_ws.sh
+ros2 run micro_ros_setup build_agent.sh
+source install/setup.bash
+cd ../..
+rosdep install --from-paths src --ignore-src -y --rosdistro jazzy --skip-keys 'micro_ros_agent camera_ros'
+colcon build --symlink-install
+source install/setup.bash
+```
+
+新终端依次source Jazzy、camera工作区、MS200工作区、agent工作区和主仓库工作区。
+确保 `ros2 pkg prefix micro_ros_agent`、`camera_ros`、`oradar_lidar`均成功。
+
+## 3. 串口与固件
+
+看 `firmware/esp32/README.md` 编译烧录。输出开关保持0，先确认串口通信、编码器和方向。
+`ls -l /dev/serial/by-id/`分辨控制板与雷达；两个USB串口不可混用。将设备真实路径作为
+launch参数；雷达端口在自己的hardware.yaml填写，使用udev持久命名时匹配设备序列号，
+不要仅凭两个设备都具有同一USB芯片VID/PID就绑定。加入dialout组并重新登录。
+
+```bash
+ros2 run micro_ros_agent micro_ros_agent serial --dev /dev/serial/by-id/YOUR_ESP32 -b 115200
+# 另一个已source的终端
+ros2 launch mecanum_bringup real_bringup.launch.py launch_agent:=false \
+  launch_sensors:=false
+ros2 topic echo /base/enabled
+ros2 topic echo /wheel/odom
+```
+
+架空手转轮验证计数和方向，校正GPIO对应轮位、x4计数、有效轮径、轴距/轮距与PID。
+先单独标定MG996角度/连杆/举升时间，再开启相应编译开关并重新烧录。
+正确接线：白色电机插头接控制板，黑色接310电机。不要用MG996信号脚供电。
+老师的电池与控制板5V输出为最终电源；供电电缆和USB数据电缆是两根线。
+
+## 4. 建图和参数标定
+
+启用传感器，`/scan`与`/camera/image_raw`应持续发布。
+`camera_ros`节点名必须为camera，使用私有图像接口`~/image_raw`。
+先建图，不启动比赛：
 
 ```bash
 ros2 launch mecanum_bringup real_bringup.launch.py \
-  launch_sensors:=false launch_navigation:=false launch_task_manager:=false
+  serial_device:=/dev/serial/by-id/YOUR_ESP32 launch_navigation:=true slam_mode:=true
 ros2 service call /safety/enable std_srvs/srv/Trigger '{}'
+# 低速遥控并保存空场静态地图；不要将可搬动货架永久写成静态障碍
+ros2 run nav2_map_server map_saver_cli -f maps/course
 ```
 
-用很小的 `/cmd_vel` 依次测试前进、横移和旋转。只在一个软件层修正电机方向。
-停止发布后必须在 500 ms 内停车；关闭 Agent 或断开 Wi-Fi 后也必须停车并保持
-未使能，直到再次调用 `/safety/enable`。
+第一次先`mkdir -p maps`。AMCL模式在RViz设置初始位姿并检查map→odom→base→lidar TF。
+`course.yaml`样例不是老师的精确A-D坐标。复制为本组配置，标定每个扫描位、插入位、
+退出位、END扫描位和四个卸货位。相机应在扫码位清楚看到二维码，取货后不要遮挡雷达。
+如果从高精度停靠测试看Nav2误差大于机构容错，需要改进定位/机械导向或增加视觉对接，
+不能只把`calibrated`改true。
 
-```bash
-ros2 service call /safety/stop std_srvs/srv/Trigger '{}'
-```
+复制 `src/mecanum_navigation/config/nav2_params.yaml` 为本组nav配置。两张costmap的
+footprint均设置为机器人与所载货架的实测最大包络（含偏载及定位余量），并校准速度，
+保守配置全程使用这个包络。当前样例仅机器人包络；不能直接载货比赛。
+`collision_monitor`利用雷达扫描和同一footprint预测接触并减速/停机；雷达丢失也停止输出。
+对接若被货架自身遮挡，调整物理雷达安装与机械进入方向，不能简单关掉避障绕过问题。
 
-## 5. 几何、PID 与里程计
+## 5. 比赛
 
-- 在载荷状态下测量轮子有效周长、前后轮中心距和左右轮中心距。
-- 先分别调四轮低速 PID，再做四轮协调；避免用高增益掩盖轮序或机械问题。
-- 用 2 m 直行、1 m 横移、360° 旋转校准轮径、横移误差和 `lx+ly`。
-- 检查 `/odom` 与 `odom -> base_footprint` 连续且只有一个 TF 发布者。
-- 麦轮在光滑地面容易横向打滑，编码器里程计误差不能用虚假的小协方差掩盖。
-
-## 6. MS200 与相机
-
-创建稳定的 `/dev/oradar` udev 链接后启动传感器：
-
-```bash
-ros2 launch mecanum_hw_bridge sensors.launch.py
-ros2 topic hz /scan
-ros2 topic hz /camera/image_raw
-```
-
-MS200 起点参数是 230400 baud、0.05-20 m、10 Hz。树莓派相机通过
-`camera_ros/camera_node` 发布连续图像；不再用 `sudo rpicam-still` 循环截图。
-若当前 Pi 相机只在 Raspberry Pi OS 的 `rpicam-*` 下工作，应先解决 libcamera
-版本匹配，而不是让任务节点以 root 权限运行。
-
-## 7. 双舵机与搬运
-
-保持 `LIFT_OUTPUT_COMPILED_IN 0`，先用示波器或舵机测试仪确认 GPIO 8/21。
-拆下连杆后确定左右舵机的安全上下角度，更新四个 `LIFT_*_DEG`，再开启编译开关。
-调用 `/lift/up` 和 `/lift/down` 返回成功只代表固件确认命令，不代表抓住了货物。
-
-实车任务还需要显式确认允许“仅靠导航位姿对接”：
+在本组配置填入实际尺寸、四个完整二维码并完成验收后标记`calibrated: true`。
+下列路径须指向自己的实测文件：
 
 ```bash
 ros2 launch mecanum_bringup real_bringup.launch.py \
-  launch_navigation:=true launch_task_manager:=true \
-  allow_pose_only_docking:=true
+  serial_device:=/dev/serial/by-id/YOUR_ESP32 \
+  launch_navigation:=true slam_mode:=false map_yaml:=/absolute/maps/course.yaml \
+  nav2_params:=/absolute/config/nav2_calibrated.yaml \
+  launch_task_manager:=true course_yaml:=/absolute/config/course_calibrated.yaml \
+  evidence_dir:=/absolute/evidence/run01
+ros2 service call /safety/enable std_srvs/srv/Trigger '{}'
+ros2 topic echo /mission/status
 ```
 
-只有在每个站点的停靠误差和空载舵机动作都验收后才能打开该参数。二维码只携带
-`stations.yaml` 中的站点 ID，不能直接给小车任意坐标。
-
-## 8. 演示前检查
-
-- [ ] 物理急停、`/safety/stop`、Wi-Fi/Agent 断开均已验证。
-- [ ] 四轮方向、编码器方向、轮径、轮距和 PID 有本车测试记录。
-- [ ] 地图、footprint、LiDAR/相机 TF 和站点坐标来自当前装配。
-- [ ] 舵机供电独立，机械限位留有余量，空载动作重复可靠。
-- [ ] 没有把 `/lift/state` 当作载荷传感器。
-- [ ] 现场有人可立即断电，并保存本组自己的 rosbag、日志和录像。
+机器人放入START区，确认AMCL定位，再让相机扫描真实START码。自动开始后无需人工
+发布目标。不要比赛中使用`ros2 topic pub /qr/data`注入字符串：它是接口测试手段，不能
+代替相机截图或老师要求的自动识别。
+异常中止用 `ros2 service call /mission/abort std_srvs/srv/Trigger '{}'`；
+确认底盘停止、人工恢复机构后用`/mission/reset`，重新摆车/使能/扫描START。
+TIMEOUT保持升降位置，操作者稳妥处理未放下的货架。断电不是保证载物不落地的机械方案。

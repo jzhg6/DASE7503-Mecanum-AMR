@@ -31,5 +31,6 @@ install(
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(course_game test/test_course_game.py)
+  ament_add_pytest_test(course_ros_graph test/test_ros_course.py TIMEOUT 60)
 endif()
 ament_package()

@@ -8,5 +8,8 @@ install(
   DESTINATION share/${PROJECT_NAME}
 )
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(nav2_activation test/test_nav2_activation.py TIMEOUT 80)
+endif()
 ament_package()
-

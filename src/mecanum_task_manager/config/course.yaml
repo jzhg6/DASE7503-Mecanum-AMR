@@ -1,4 +1,5 @@
-# Teaching diagram estimates only. Map frame: lower-left of landscape drawing,
+# SOFTWARE TEST EXAMPLE ONLY; rack letters and approach poses are not surveyed.
+# Map frame convention: lower-left of landscape drawing,
 # +x toward START (3020 mm), +y upward (2000 mm). Align the SLAM map to this
 # frame or replace ALL poses. These are ROBOT poses, not rack centres.
 # Set true only after the tests in docs/COURSE_ACCEPTANCE.md pass.

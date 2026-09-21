@@ -162,8 +162,10 @@ planner_server:
 
 behavior_server:
   ros__parameters:
-    costmap_topic: local_costmap/costmap_raw
-    footprint_topic: local_costmap/published_footprint
+    local_costmap_topic: local_costmap/costmap_raw
+    global_costmap_topic: global_costmap/costmap_raw
+    local_footprint_topic: local_costmap/published_footprint
+    global_footprint_topic: global_costmap/published_footprint
     cycle_frequency: 10.0
     enable_stamped_cmd_vel: false
     behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
@@ -177,7 +179,8 @@ behavior_server:
       plugin: "nav2_behaviors::Wait"
     assisted_teleop:
       plugin: "nav2_behaviors::AssistedTeleop"
-    global_frame: odom
+    local_frame: odom
+    global_frame: map
     robot_base_frame: base_link
     transform_tolerance: 0.1
     use_sim_time: true
@@ -276,3 +279,53 @@ map_saver:
     free_thresh_default: 0.25
     occupied_thresh_default: 0.65
     map_subscribe_transient_local: True
+
+smoother_server:
+  ros__parameters:
+    smoother_plugins: [simple_smoother]
+    simple_smoother:
+      plugin: nav2_smoother::SimpleSmoother
+      tolerance: 1.0e-10
+      max_its: 1000
+      do_refinement: true
+
+velocity_smoother:
+  ros__parameters:
+    enable_stamped_cmd_vel: false
+    smoothing_frequency: 20.0
+    feedback: OPEN_LOOP
+    scale_velocities: true
+    max_velocity: [0.35, 0.25, 1.0]
+    min_velocity: [-0.20, -0.25, -1.0]
+    max_accel: [0.8, 0.8, 1.5]
+    max_decel: [-0.8, -0.8, -1.5]
+    odom_topic: /odom
+    velocity_timeout: 0.3
+    deadband_velocity: [0.0, 0.0, 0.0]
+
+collision_monitor:
+  ros__parameters:
+    enable_stamped_cmd_vel: false
+    base_frame_id: base_footprint
+    odom_frame_id: odom
+    cmd_vel_in_topic: cmd_vel_smoothed
+    cmd_vel_out_topic: cmd_vel
+    state_topic: collision_monitor_state
+    transform_tolerance: 0.2
+    source_timeout: 0.5
+    stop_pub_timeout: 1.0
+    polygons: [FootprintApproach]
+    FootprintApproach:
+      type: polygon
+      action_type: approach
+      footprint_topic: /local_costmap/published_footprint
+      time_before_collision: 0.8
+      simulation_time_step: 0.05
+      min_points: 3
+      visualize: false
+      enabled: true
+    observation_sources: [scan]
+    scan:
+      type: scan
+      topic: /scan
+      enabled: true

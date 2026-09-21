@@ -1,66 +1,30 @@
-# ESP32-S3 base firmware
+# ESP32-S3 / Jazzy / USB serial
 
-This is an independent ESP-IDF and micro-ROS implementation for the course
-controller board. It does not contain source files from the previous student
-repository. Only externally observable hardware facts (GPIO assignments,
-encoder resolution, wheel circumference and ROS responsibilities) were used.
+独立实现的四轮编码器PID、里程计、停止联锁、单MG996举升与micro-ROS接口。
+主机部署见 `../../docs/HARDWARE_BRINGUP.md`，接线见 `../../hardware/HARDWARE_PROFILE.md`。
 
-## Safety defaults
-
-`MOTOR_OUTPUT_COMPILED_IN` and `LIFT_OUTPUT_COMPILED_IN` in
-`components/robot_config/include/board_config.h` are both `0`. A runtime ROS
-command cannot override these compile-time gates. Motor targets are forced to
-zero when `/cmd_vel` is silent for 500 ms; losing the micro-ROS agent also
-clears the runtime enable latch.
-
-## ROS interface
-
-| Direction | Topic | Type | Meaning |
-|---|---|---|---|
-| subscribe | `/cmd_vel` | `geometry_msgs/Twist` | body velocity request |
-| subscribe | `/base/enable` | `std_msgs/Bool` | arm or disarm motors |
-| subscribe | `/lift/command` | `std_msgs/Int32` | `0` lower, `1` raise |
-| publish | `/wheel/odom` | `nav_msgs/Odometry` | encoder-integrated odometry |
-| publish | `/base/enabled` | `std_msgs/Bool` | actual firmware arm state |
-| publish | `/lift/state` | `std_msgs/Int32` | acknowledged open-loop command |
-
-`/lift/state` is not load or position feedback. The supplied hardware has no
-lift limit switch or position sensor, so the Raspberry Pi must not present it as
-proof that a load was successfully picked up.
-
-## Build on Linux
-
-Use the ROS distribution chosen for the Raspberry Pi consistently. The current
-repository baseline is Ubuntu 22.04 and ROS 2 Humble.
+在Linux ESP-IDF 5.4.2环境编译：
 
 ```bash
-source ~/esp/esp-idf/export.sh
-cd firmware/esp32
-pip3 install catkin_pkg colcon-common-extensions lark "empy<4"
+pip install catkin_pkg colcon-common-extensions lark empy==3.3.4
 idf.py set-target esp32s3
-idf.py menuconfig
 idf.py build
-idf.py flash monitor
+idf.py -p /dev/ttyUSB0 flash
 ```
 
-`main/idf_component.yml` pins the Humble-compatible `22.x` micro-ROS component;
-ESP-IDF downloads it into `managed_components` on Linux. In `menuconfig`,
-configure the micro-ROS Wi-Fi transport, agent address, agent
-port (the project default is 8090) and the same ROS domain ID used on the Pi.
-Do not commit Wi-Fi credentials or a fixed local IP address.
+先通过设备序列号确认端口。固件使用UART0 115200 8N1，TX43/RX44；Jazzy组件锁定git
+commit，`sdkconfig.defaults`选择自定义UART传输并关闭该串口日志。不可同时打开串口
+monitor和Agent。Pi/PC都使用 `ROS_DOMAIN_ID=20`。
 
-## Required bench sequence
+| 方向 | 接口 | 含义 |
+|---|---|---|
+| 订阅 | `/cmd_vel` Twist | m/s, m/s, rad/s；500ms无新命令清PID并停止PWM |
+| 订阅 | `/base/enable` Bool | 编译输出开关开启后才能运行时使能 |
+| 订阅 | `/lift/command` Int32 | 0放下/1举升；必须已使能且静止 |
+| 发布 | `/wheel/odom` Odometry | 编码器里程计，20Hz |
+| 发布 | `/base/enabled` Bool | 运行时使能状态，20Hz |
+| 发布 | `/lift/state` Int32 | -1未知/动作中，0低，1高；等待1500ms后确认 |
 
-1. Run `make firmware-host-test` on a normal computer.
-2. Flash with both compile gates at zero and confirm micro-ROS topics appear.
-3. With motor power disconnected, rotate each wheel by hand and verify the sign
-   and scale of `/wheel/odom`.
-4. Raise the chassis, enable one motor at a time and correct the direction
-   constants. Use a current-limited supply and a physical emergency stop.
-5. Tune each wheel PID at low speed before testing lateral motion.
-6. Detach the lift linkage, calibrate both servos, then update the four lift
-   angles. Only after those checks should the output gates be changed to `1`.
-
-The repository intentionally does not provide a ready-to-flash `sdkconfig`,
-because it contains network settings and depends on the selected ESP-IDF and
-micro-ROS versions.
+上电不使能。失联、非法速度清使能；速度看门狗停车但保留使能以允许Nav2驻停扫码。
+控制任务独占电机输出，最迟下一10ms周期执行停机。举升期间禁止底盘PWM输出。
+计时结束保持当前舵机命令，不在运输途中主动卸货。完整固件构建不等于实物验收。

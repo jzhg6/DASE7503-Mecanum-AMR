@@ -1,4 +1,4 @@
-# Validation record
+# Historical validation record - superseded by current Jazzy checks
 
 Validation date: 2026-09-18
 

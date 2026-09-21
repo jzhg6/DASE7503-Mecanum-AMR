@@ -1,5 +1,11 @@
 # Third-party notices
 
+2026-09-21: teacher-supplied project materials supersede earlier hardware
+assumptions (65 mm wheels, one MG996, USB serial and ROS 2 Jazzy). The new
+course game, UART adapter and deployment documentation are original project work.
+micro_ros_espidf_component is fetched as an Apache-2.0 dependency at the commit
+in firmware/esp32/main/idf_component.yml, not relabelled as our own source.
+
 ## Trkkhrmn/ros2_amr_mecanumbot
 
 This repository was initially based on `Trkkhrmn/ros2_amr_mecanumbot`.

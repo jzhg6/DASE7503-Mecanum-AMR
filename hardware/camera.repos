@@ -1,0 +1,9 @@
+repositories:
+  libcamera:
+    type: git
+    url: https://github.com/raspberrypi/libcamera.git
+    version: 6c1dd9d55573010f710c9e190a73e7e76f0d9432
+  camera_ros:
+    type: git
+    url: https://github.com/christianrauch/camera_ros.git
+    version: 8f792e27a6dbc81e4943a75765fc1b7b7d37b301

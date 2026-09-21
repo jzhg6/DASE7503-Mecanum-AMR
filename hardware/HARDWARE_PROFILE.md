@@ -1,30 +1,22 @@
-# Same-hardware clean-room profile
+# 本届器材与引脚
 
-Reference observation: `118ovo/DASE7503-Sem1-Group2`, commit
-`d96b6071f32a5d04c0f529ada2d040119676eb1a`. The repository represents the
-same course-provided hardware. Its implementation was inspected to identify
-external hardware facts, but no C/C++/Python source or CAD asset was copied.
+权威来源：老师 `3. Group Projects Materials.pdf` p1-15。
 
-| Fact used by this project | Value | Status |
-|---|---:|---|
-| Controller | ESP32-S3 micro-ROS board | confirmed by prior build; inspect label |
-| Motor PWM pairs FL/FR/RL/RR | 4/5, 15/16, 9/10, 13/14 | continuity-test before power |
-| Encoder pairs FL/FR/RL/RR | 6/7, 47/48, 11/12, 1/2 | hand-turn verification required |
-| Servo GPIO left/right | 8, 21 | verify connector labels |
-| Encoder counts/output revolution | 1040 | measure one marked revolution |
-| Wheel circumference | 150.8 mm | verify under working load |
-| Full wheelbase / track used by prior controller | 95 / 135 mm | physical measurement required |
-| MS200 serial settings | `/dev/oradar`, 230400 baud | verify udev symlink |
-| LiDAR scan limits | 0.05-20 m, 10 Hz | manufacturer nominal |
+| 板上端口 | 电机PWM GPIO | 编码器GPIO | 软件默认轮位（必须校验） |
+|---|---|---|---|
+| M1 | 4/5 | 6/7 | FL |
+| M2 | 15/16 | 47/48 | FR |
+| M3 | 9/10 | 11/12 | RL |
+| M4 | 13/14 | 1/2 | RR |
 
-## Values intentionally not treated as facts
+MG996一只接S1，GPIO8；S2 GPIO21空置。Type-C串口接UART0 TX43/RX44，
+不是把USB线接到供电口。雷达USB独立接Pi。编码电机白插头接控制板、黑插头接电机，
+错误接线会损坏控制板（老师p7/p11）。电池为7.4V，Pi由控制板5V Type-C口供电。
 
-- Motor and encoder signs: these depend on connector order and wheel mounting.
-- PID gains: the repository provides conservative starting values, not copied
-  tuning constants.
-- Lift angles: only safe placeholders are present; linkage geometry must be
-  calibrated with the horn detached.
-- Acrylic outline, camera transform and loaded footprint: these must be measured
-  from the built vehicle. The Xacro uses an independently drawn primitive model.
-- Prior navigation screenshots and outcomes: they are not evidence for this
-  project and must not appear as our experimental results.
+轮径65mm；正交x4计数暂用13PPR×20减速比×4=1040/rev，必须验证一圈计数与正负号。
+轴距95mm、轮距135mm目前仅为旧实现占位值，需与自制底盘及URDF同步实测修改。
+舵机默认低0度/高30度是相对中心角的测试占位，不是MG996连杆的通用安全角度。
+未标定时 `MOTOR_OUTPUT_COMPILED_IN=0`、`LIFT_OUTPUT_COMPILED_IN=0`，无舵机PWM生成。
+
+没有提供力/载荷传感器或舵机位置反馈。`/lift/state` 是命令+等待时间估计，
+不是确认货架离地的测量。应通过合理机械限位、自锁支撑和举升间隙验证保证实际搬运。

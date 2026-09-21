@@ -19,8 +19,8 @@ from course_game import CourseGame, validate_config
 
 
 class CourseMissionNode(Node):
-    def __init__(self):
-        super().__init__('course_mission')
+    def __init__(self, parameter_overrides=None):
+        super().__init__('course_mission', parameter_overrides=parameter_overrides)
         for name, default in [('course_yaml', ''), ('evidence_dir', 'evidence'),
                               ('operation_timeout_sec', 30.0),
                               ('base_state_timeout_sec', 1.0), ('map_frame', 'map')]:

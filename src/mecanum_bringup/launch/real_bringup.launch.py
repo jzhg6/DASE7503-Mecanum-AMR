@@ -63,6 +63,7 @@ def generate_launch_description():
             'use_sim_time': 'false',
             'slam_mode': slam_mode,
             'map_yaml': map_yaml,
+            'nav2_params': LaunchConfiguration('nav2_params'),
         }.items(),
         condition=IfCondition(launch_navigation),
     )
@@ -89,6 +90,7 @@ def generate_launch_description():
         DeclareLaunchArgument('launch_task_manager', default_value='false'),
         DeclareLaunchArgument('slam_mode', default_value='true'),
         DeclareLaunchArgument('map_yaml', default_value=''),
+        DeclareLaunchArgument('nav2_params', default_value=os.path.join(navigation_dir, 'config', 'nav2_params.yaml')),
         DeclareLaunchArgument(
             'course_yaml',
             default_value=os.path.join(task_dir, 'config', 'course.yaml'),

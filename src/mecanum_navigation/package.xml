@@ -12,6 +12,10 @@
   <depend>nav2_amcl</depend>
   <exec_depend>nav2_mppi_controller</exec_depend>
   <test_depend>ament_lint_auto</test_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <test_depend>rclpy</test_depend>
+  <test_depend>tf2_ros</test_depend>
+  <test_depend>lifecycle_msgs</test_depend>
   <test_depend>ament_lint_common</test_depend>
   <export>
     <build_type>ament_cmake</build_type>
